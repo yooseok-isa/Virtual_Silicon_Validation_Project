@@ -1,6 +1,6 @@
 # Version Record
 
-Last updated: 2026-07-28
+Last updated: 2026-07-29
 
 ## QEMU
 
@@ -42,7 +42,24 @@ Linux kernel x86 boot executable bzImage, version 6.18.7
 
 ```text
 bb314752121210e86ecb5b8d24537001d821a9bc3a0c4d05ecd6299194d6a678  output/images/bzImage
-9392e66c5883f9cd64f72db7e9edb0fd3928b6b471a936c327c9437463746bfa  output/images/rootfs.ext4
+3959025b08a9739fca10dc99564175fca51e7e270974e08cb504dbd334bb8220  output/images/rootfs.ext4
+```
+
+## Boot Evidence
+
+| Item | Result |
+|---|---|
+| Boot script | `scripts/run-qemu.sh` |
+| QEMU machine | `q35` |
+| Kernel image | `output/images/bzImage` |
+| Root filesystem | `output/images/rootfs.ext4` |
+| Guest root shell | reached |
+| Guest `lspci` | success |
+
+Observed `lspci` output:
+
+```text
+00:1f.2 Class 0106: 8086:2922
 ```
 
 ## Verified Commands
