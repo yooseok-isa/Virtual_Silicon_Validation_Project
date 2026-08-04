@@ -19,11 +19,7 @@
 #include "qapi/visitor.h"
 
 #define TYPE_PCI_VNPU_DEVICE "vnpu"
-#define REVISION VNPU_REVISION_A// revision a is 1, b is 2
-#define BIT(n) (1 << (n))
-
-#define VEC_LEN_A 0x08
-#define VEC_LEN_B 0x10
+#define VECTOR_LEN 0x10
 
 // Revison
 #define VNPU_REVISION_A 0x1
@@ -49,8 +45,8 @@
 #define STATUS_ERROR 0x3
 
 // IRQ Status
-#define IRQ_COMLETION BIT(0)
-#define IRQ_ERROR BIT(1)
+#define IRQ_COMLETION 0x0
+#define IRQ_ERROR 0x1
 
 // Error Code
 #define VNPU_ERR_NONE 0x0
@@ -67,13 +63,10 @@ struct VnpuState {
 	MemoryRegion mmio;
 	bool stopping;
 	uint32_t status;
-	uint32_t err_code;
 
 	int8_t input_a[4];
 	int8_t input_b[4];
 	int32_t result;
-	
-	uint32_t ctrl;
 
 	QemuThread thread;
 	QemuMutex thr_mutex;
@@ -81,17 +74,60 @@ struct VnpuState {
 	bool stopping;
 
 	uint32_t irq_status;
-	uint32_t irq_enable;
-
-	QEMUTimer dot_timer;
-
 
 
 };
 
+static bool edu_msi_enabled(EduState *edu)
+{
+    return msi_enabled(&edu->pdev);
+}
+
+static void edu_raise_irq(EduState *edu, uint32_t val)
+{
+    edu->irq_status |= val;
+    if (edu->irq_status) {
+        if (edu_msi_enabled(edu)) {
+            msi_notify(&edu->pdev, 0);
+        } else {
+            pci_set_irq(&edu->pdev, 1);
+        }
+    }
+}
+
+static void edu_lower_irq(EduState *edu, uint32_t val)
+{
+    edu->irq_status &= ~val;
+
+    if (!edu->irq_status && !edu_msi_enabled(edu)) {
+        pci_set_irq(&edu->pdev, 0);
+    }
+}
+
+static void edu_check_range(uint64_t xfer_start, uint64_t xfer_size,
+                uint64_t dma_start, uint64_t dma_size)
+{
+    uint64_t xfer_end = xfer_start + xfer_size;
+    uint64_t dma_end = dma_start + dma_size;
+
+    /*
+     * 1. ensure we aren't overflowing
+     * 2. ensure that xfer is within dma address range
+     */
+    if (dma_end >= dma_start && xfer_end >= xfer_start &&
+        xfer_start >= dma_start && xfer_end <= dma_end) {
+        return;
+    }
+
+    qemu_log_mask(LOG_GUEST_ERROR,
+                  "EDU: DMA range 0x%016"PRIx64"-0x%016"PRIx64
+                  " out of bounds (0x%016"PRIx64"-0x%016"PRIx64")!",
+                  xfer_start, xfer_end - 1, dma_start, dma_end - 1);
+}
+
 static uint64_t vnpu_mmio_read(void *opaque, hwaddr addr, unsigned size)
 {
-    edustate *vnpu = opaque;
+    edustate *edu = opaque;
     uint64_t val = ~0ULL;
 	
 	if(size != 4){
@@ -109,7 +145,7 @@ static uint64_t vnpu_mmio_read(void *opaque, hwaddr addr, unsigned size)
 		val = CAP;
 		break;
 	case 0x010:
-		val = vnpu->status;
+		val = STATUS;
 		break;
 	case 0x014:
 		val = IRQ_STATUS;
@@ -118,13 +154,13 @@ static uint64_t vnpu_mmio_read(void *opaque, hwaddr addr, unsigned size)
 		val = IRQ_ENABLE;
 		break;
 	case 0x01C:
-		val = vnpu->err_code;
+		val = ERROR_CODE;
 		break;
 	case 0x020:
 		val = JOB_ID;
 		break;
 	case 0x024:
-		val = vnpu->vec_len;
+		val = VECTOR_LENGTH;
 		break;
 	case 0x100:
 		val = *INPUT_A;
@@ -155,66 +191,39 @@ static void vnpu_mmio_write(void *opaque, hwaddr addr, uint64_t val,
 	}
 	switch (addr) {
 		case 0x00C: //CONTROL
-			if(val & CONTROL_RESET){
+			if(val){
 				vnpu->status = STATUS_IDLE;
-				//reset_vnpu_status();
-				//stopping
+				//reset_vnpu_status_thread();
 				break;
 			}
 			if(!(vnpu->status)){
 				break;
-				// send VNPU_ERR_BUSY
+				//raise_irq();??
 				/* Device is not idle. */
 			}
 			vnpu->status = STATUS_BUSY;
-			timer_mod(&vnpu->dot_tiomer, qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL)+100);
-			vnpu_raise_irq(vnpu);
+			qemu_mutex_lock(&vnpu->thr_mutex);
+			qemu_cond_signal(&vnpu->thr_cond);
+			qemu_mutex_unlock(&vnpu->thr_mutex);
+			/* start thread.*/
+
 			break;
 		case 0x014: //IRQ_STATUS
-			vnpu->irq_status &= ~val;
 			break;
 		case 0x018: //IRQ_ENABLE
-			vnpu->irq_enable = val & (IRQ_ERROR | IRQ_COMPLETION);
 			break;
 		case 0x020: //JOB_ID
 			break;
 		case 0x024: //VECTOR_LENGTH
 			break;
 		case 0x100: //write INPUT_A
-			vnpu->INPUT_A[0] = (uint32_t)val;
-			break;
-		case 0x104: //write INPUT_A
-			vnpu->INPUT_A[1] = (uint32_t)val;
-			break;
-		case 0x108: //write INPUT_A
-			vnpu->INPUT_A[2] = (uint32_t)val;
-			break;
-		case 0x10C: //write INPUT_A
-			vnpu->INPUT_A[3] = (uint32_t)val;
 			break;
 		case 0x120: //write INPUT_B
-			vnpu->INPUT_B[0] = (uint32_t)val;
-			break;
-		case 0x124: //write INPUT_B
-			vnpu->INPUT_B[1] = (uint32_t)val;
-			break;
-		case 0x128: //write INPUT_B
-			vnpu->INPUT_B[2] = (uint32_t)val;
-			break;
-		case 0x12C: //write INPUT_B
-			vnpu->INPUT_B[3] = (uint32_t)val;
 			break;
 		case 0x180: //write FAULT_CONTROL
 			break;
 
 	}
-}
-static const vnpu_raise_irq(VnpuState *vnpu){
-
-	bool pending = vnpu->irq_status & vnpu->irq_enable;
-
-	pci_set_irq(&vnpu->pdev , pending);
-
 }
 
 static const MemoryRegionOps vnpu_mmio_ops = {
@@ -232,49 +241,28 @@ static const MemoryRegionOps vnpu_mmio_ops = {
 
 };
 
-static uint32_t vnpu_dot_thread(void *opaque){
+static void vnpu_dot_thread(void *opaque){
 	
 	VnpuState *vnpu = opaque;
-	int8_t *input_a = vnpu->INPUT_A;
-	int8_t *input_b = vnpu->INPUT_B;
+	int8_t *input_a;
+	int8_t *input_b;
 	int32_t val = 0;
 
 	for(int i=0; i<4 ; i++){
 		val += (int32_t)input_a[i] * (int32_t)input_b[b];
 	}
-	return val;
-}
-
-static void vnpu_dot_timer(void *opaque){
 	
-	VnpuState *vnpu = opaque;
-	vnpu->result = vnpu_dot_thread(vnpu);
-	vnpu->status = STATUS_DONE;
-	vnpu->irq_status |= IRQ_COMPLETION;
+	//mutex_lock?
+	vnpu->result = val;
+	//mutex_unlock?
 
-  	if (s->irq_enable & IRQ_COMPLETION) {
-		pci_set_irq(vnpu->pdev, 1);
-  }
 }
 
 static void pci_vnpu_realize(PCIDevice *pdev, Error **errp){
 
 	VnpuState *vnpu = VNPU(pdev);
-	uint8_t *pci_conf = pdev->config;
-
-	pci_config_set_interrupt_pin(pci_conf, 1);
-	
-	qemu_mutex_init(&vnpu->thr_mutex);
-	qemu_cond_init(&vnpu->thr_cond);
-	timer_init_ms(&vnpu->dot_timer, QEMU_CLOCK_VIRTUAL, vnpu_dot_timer, vnpu);
-
 	memory_region_init_io(&vnpu->mmio, OBJECT(vpnu), &vpnu_mmio_ops, vpnu, "vpnu-mmio", 1 * MiB);
 	pci_register_bar(pdev, 0, PCI_BASE_ADDRESS_SPACE_MEMORY, &vpnu->mmio);
-
-	if(REVIOSION == 1)
-		vnpu->vec_len = VEC_LEN_A;
-	else if(REVIOSION == 2)
-		vnpu->vec_len = VEC_LEN_B;
 }
 
 static void pci_vnpu_uninit(PCIDevice *pdev)

@@ -126,6 +126,7 @@ To clear an interrupt bit, the driver writes `1` to the corresponding bit.
 Offset: `0x018`  
 Access: read/write
 
+1 is enable, 0 is disable.
 Uses the same bit definitions as `IRQ_STATUS`.
 
 An IRQ is raised only when the matching bit is set in both `IRQ_STATUS` and `IRQ_ENABLE`.
@@ -170,8 +171,8 @@ Access: read/write
 
 | Revision | Supported Values |
 |---|---|
-| A | `16` only |
-| B | `8` or `16` |
+| A | `8` only | 
+| B | `16` only |
 
 Unsupported values must produce `VNPU_ERR_INVALID_LENGTH`.
 
