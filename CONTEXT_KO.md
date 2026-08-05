@@ -241,8 +241,8 @@ result = Σ (input_a[i] × input_b[i]), for i = 0 ... vector_length - 1
 
 - Input Element는 Signed 8-bit Integer이다.
 - Output은 Signed 32-bit Integer이다.
-- Revision A는 `vector_length = 16`만 지원한다.
-- Revision B는 `vector_length = 8` 또는 `16`을 지원한다.
+- Revision A는 `vector_length = 8`만 지원한다.
+- Revision B는 `vector_length = 16`만 지원한다.
 - MVP에서 Input Data는 MMIO Register로 전달한다.
 - 연산은 의도적으로 작게 유지한다. 본 프로젝트의 평가 대상은 Accelerator 성능이 아니라 Software Stack과 Validation Design이다.
 
@@ -251,7 +251,7 @@ result = Σ (input_a[i] × input_b[i]), for i = 0 ... vector_length - 1
 구현 시 교육용 Local PCI Vendor/Device Pair를 정의한다.
 
 - 선택한 Identifier가 고정한 QEMU Tree와 충돌하는지 확인한다.
-- Identifier를 `docs/register-map.md`에 문서화한다.
+- Identifier를 `docs/register_map.md`에 문서화한다.
 - 저장소에는 해당 ID가 Local Virtual Device용이며 공식 Vendor Allocation이 아님을 명시한다.
 
 권장 시작값은 다음과 같으며 사용 전에 충돌 여부를 검증해야 한다.
@@ -283,7 +283,7 @@ Class:     processing accelerator or other documented experimental choice
 | `0x018` | `IRQ_ENABLE` | RW | `0` | IRQ Mask |
 | `0x01C` | `ERROR_CODE` | RO | `0` | 마지막 Device Error |
 | `0x020` | `JOB_ID` | RW | `0` | Revision B Job Identifier |
-| `0x024` | `VECTOR_LENGTH` | RW | `16` | Revision-dependent Vector Length |
+| `0x024` | `VECTOR_LENGTH` | RW | `8` | Dot-product Vector Length |
 | `0x100`–`0x10C` | `INPUT_A[0..3]` | RW | `0` | 16개의 Packed INT8 Value |
 | `0x120`–`0x12C` | `INPUT_B[0..3]` | RW | `0` | 16개의 Packed INT8 Value |
 | `0x140` | `RESULT` | RO | `0` | Signed INT32 Dot-product Result |
@@ -394,7 +394,7 @@ Behavior Rule:
 | Feature | Revision A | Revision B |
 |---|---|---|
 | INT8 Dot Product | 지원 | 지원 |
-| Vector Length | 16 고정 | 8 또는 16 |
+| Vector Length | 8 고정 | 16 고정 |
 | Job ID | 미지원; Read는 0, Write는 무시 | 지원 |
 | Completion IRQ | 지원 | 지원 |
 | Separate Error IRQ Status | 미지원 | 지원 |
@@ -651,7 +651,7 @@ GoogleTest는 최소한 다음을 검증해야 한다.
 
 - Capability Parsing;
 - Revision A Fixed-length Behavior;
-- Revision B Variable-length Behavior;
+- Revision B Fixed-length Behavior;
 - Unsupported Length 거부;
 - Driver Error Mapping;
 - Device Error Mapping;
@@ -755,8 +755,8 @@ feat: implement capability parser
 test: add IRQ timeout integration case
 feat: add driver timeout and reset recovery
 
-test: add revision B variable-length regression
-feat: implement revision B vector-length capability
+test: add revision B fixed-length regression
+feat: implement revision B vector-length support
 ```
 
 모든 Setup Commit이 Test-first일 필요는 없다. 그러나 최소한 다음 기능은 Test가 Fix/Implementation보다 먼저 추가된 이력이 보여야 한다.
@@ -782,7 +782,7 @@ virtual-npu-validation-platform/
 ├── docs/
 │   ├── architecture.md
 │   ├── versions.md
-│   ├── register-map.md
+│   ├── register_map.md
 │   ├── revision-matrix.md
 │   ├── driver-design.md
 │   ├── uapi.md
@@ -999,8 +999,8 @@ Symptom
 | `REQ-IRQ-001` | 정상 완료 시 Enable된 IRQ가 발생해야 함 | `test_irq_completion` |
 | `REQ-ERR-001` | IRQ Drop 시 상한이 있는 Timeout이 발생해야 함 | `test_irq_drop_timeout` |
 | `REQ-REC-001` | Timeout Recovery 후 Device가 IDLE로 복귀해야 함 | `test_stuck_busy_recovery` |
-| `REQ-REV-001` | Revision A는 Length 16만 지원해야 함 | Revision A Test |
-| `REQ-REV-002` | Revision B는 Length 8과 16을 지원해야 함 | Revision B Test |
+| `REQ-REV-001` | Revision A는 Length 8만 지원해야 함 | Revision A Test |
+| `REQ-REV-002` | Revision B는 Length 16만 지원해야 함 | Revision B Test |
 | `REQ-REV-003` | 하나의 HAL API가 두 Revision 모두에서 동작해야 함 | Parameterized HAL/Integration Test |
 | `REQ-UAPI-001` | Invalid ABI Version을 거부해야 함 | UAPI Validation Test |
 | `REQ-DRV-001` | Failed Probe가 획득한 모든 Resource를 해제해야 함 | Probe-failure Test/Log Inspection |
@@ -1134,7 +1134,7 @@ Acceptance Criteria:
 작업:
 
 - Revision B Capability 구현;
-- Vector Length 8/16 지원;
+- Revision B Vector Length 16 지원;
 - Job ID 지원;
 - Separate Error IRQ Status 지원;
 - Python Reference Model 구현;
@@ -1418,7 +1418,7 @@ Status Rule:
 CONTEXT_KO.md를 처음부터 끝까지 읽고 저장소를 검사하라. Milestone 0만 시작하라.
 
 초기 repository skeleton, PROJECT_STATUS.md, docs/versions.md,
-docs/architecture.md, docs/register-map.md,
+docs/architecture.md, docs/register_map.md,
 docs/adr/0001-record-architecture-decisions.md,
 그리고 source-fetch/build script skeleton을 생성하라.
 

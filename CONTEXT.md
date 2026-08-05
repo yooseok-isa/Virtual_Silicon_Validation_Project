@@ -239,8 +239,8 @@ result = Σ (input_a[i] × input_b[i]), for i = 0 ... vector_length - 1
 
 - Input elements are signed 8-bit integers.
 - Output is a signed 32-bit integer.
-- Revision A supports `vector_length = 16` only.
-- Revision B supports `vector_length = 8` or `16`.
+- Revision A supports `vector_length = 8` only.
+- Revision B supports `vector_length = 16` only.
 - Input data is transferred through MMIO registers in the MVP.
 - The operation is intentionally small. The project evaluates the software stack and validation design, not accelerator performance.
 
@@ -249,7 +249,7 @@ result = Σ (input_a[i] × input_b[i]), for i = 0 ... vector_length - 1
 The implementation must define a local educational PCI vendor/device pair.
 
 - The selected identifiers must be checked against the pinned QEMU tree for conflicts.
-- The identifiers must be documented in `docs/register-map.md`.
+- The identifiers must be documented in `docs/register_map.md`.
 - The repository must state that the IDs are for a local virtual device and are not an official vendor allocation.
 
 Recommended starting values, subject to conflict verification:
@@ -281,7 +281,7 @@ Class:     processing accelerator or other documented experimental choice
 | `0x018` | `IRQ_ENABLE` | RW | `0` | IRQ mask |
 | `0x01C` | `ERROR_CODE` | RO | `0` | Last device error |
 | `0x020` | `JOB_ID` | RW | `0` | Revision B job identifier |
-| `0x024` | `VECTOR_LENGTH` | RW | `16` | Revision-dependent vector length |
+| `0x024` | `VECTOR_LENGTH` | RW | `8` | Dot-product vector length |
 | `0x100`–`0x10C` | `INPUT_A[0..3]` | RW | `0` | 16 packed INT8 values |
 | `0x120`–`0x12C` | `INPUT_B[0..3]` | RW | `0` | 16 packed INT8 values |
 | `0x140` | `RESULT` | RO | `0` | Signed INT32 dot-product result |
@@ -392,7 +392,7 @@ Behavioral rules:
 | Feature | Revision A | Revision B |
 |---|---|---|
 | INT8 dot product | Yes | Yes |
-| Vector length | Fixed 16 | 8 or 16 |
+| Vector length | Fixed 8 | Fixed 16 |
 | Job ID | No; reads zero, writes ignored | Yes |
 | Completion IRQ | Yes | Yes |
 | Separate error IRQ status | No | Yes |
@@ -650,7 +650,7 @@ GoogleTest must cover at least:
 
 - capability parsing;
 - revision A fixed-length behavior;
-- revision B variable-length behavior;
+- revision B fixed-length behavior;
 - unsupported length rejection;
 - driver-error mapping;
 - device-error mapping;
@@ -754,8 +754,8 @@ feat: implement capability parser
 test: add IRQ timeout integration case
 feat: add driver timeout and reset recovery
 
-test: add revision B variable-length regression
-feat: implement revision B vector-length capability
+test: add revision B fixed-length regression
+feat: implement revision B vector-length support
 ```
 
 Not every setup commit needs to be test-first, but at least the following features should have visible test-before-fix history:
@@ -780,7 +780,7 @@ virtual-npu-validation-platform/
 ├── docs/
 │   ├── architecture.md
 │   ├── versions.md
-│   ├── register-map.md
+│   ├── register_map.md
 │   ├── revision-matrix.md
 │   ├── driver-design.md
 │   ├── uapi.md
@@ -998,8 +998,8 @@ Maintain a table similar to the following in `docs/requirements-traceability.md`
 | `REQ-IRQ-001` | Normal completion raises an enabled IRQ | `test_irq_completion` |
 | `REQ-ERR-001` | IRQ drop produces bounded timeout | `test_irq_drop_timeout` |
 | `REQ-REC-001` | Timeout recovery returns device to IDLE | `test_stuck_busy_recovery` |
-| `REQ-REV-001` | Revision A supports length 16 only | revision A test |
-| `REQ-REV-002` | Revision B supports lengths 8 and 16 | revision B test |
+| `REQ-REV-001` | Revision A supports length 8 only | revision A test |
+| `REQ-REV-002` | Revision B supports length 16 only | revision B test |
 | `REQ-REV-003` | One HAL API works for both revisions | parameterized HAL/integration test |
 | `REQ-UAPI-001` | Invalid ABI version is rejected | UAPI validation test |
 | `REQ-DRV-001` | Failed probe releases all acquired resources | probe-failure test/log inspection |
@@ -1133,7 +1133,7 @@ Acceptance criteria:
 Tasks:
 
 - implement revision B capabilities;
-- support vector length 8/16;
+- support revision B vector length 16;
 - support job ID;
 - support separate error IRQ status;
 - implement Python reference model;
@@ -1417,7 +1417,7 @@ Suggested prompt:
 Read CONTEXT.md in full and inspect the repository. Start Milestone 0 only.
 
 Create the initial repository skeleton, PROJECT_STATUS.md, docs/versions.md,
-docs/architecture.md, docs/register-map.md, docs/adr/0001-record-architecture-decisions.md,
+docs/architecture.md, docs/register_map.md, docs/adr/0001-record-architecture-decisions.md,
 and the source-fetch/build script skeletons.
 
 Do not implement the QEMU virtual device or Linux driver yet.

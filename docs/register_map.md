@@ -30,7 +30,7 @@ These IDs are for a local virtual portfolio project. They are not official hardw
 | `0x018` | `IRQ_ENABLE` | RW | `0` | Interrupt enable mask |
 | `0x01C` | `ERROR_CODE` | RO | `0` | Last device error |
 | `0x020` | `JOB_ID` | RW | `0` | Revision B job identifier |
-| `0x024` | `VECTOR_LENGTH` | RW | `16` | Dot-product vector length |
+| `0x024` | `VECTOR_LENGTH` | RW | `8` | Dot-product vector length |
 | `0x100`-`0x10C` | `INPUT_A[0..3]` | RW | `0` | 16 packed signed INT8 inputs |
 | `0x120`-`0x12C` | `INPUT_B[0..3]` | RW | `0` | 16 packed signed INT8 inputs |
 | `0x140` | `RESULT` | RO | `0` | Signed INT32 dot-product result |
@@ -240,6 +240,7 @@ RESET
        -> START valid request
             -> BUSY
                  -> DONE
+                    -> IDLE, if result is read.
                  -> ERROR
                  -> BUSY until RESET when FAULT_STUCK_BUSY is active
        -> START while BUSY
