@@ -23,7 +23,7 @@ These IDs are for a local virtual portfolio project. They are not official hardw
 |---:|---|---|---:|---|
 | `0x000` | `DEVICE_ID` | RO | `0x564E5055` | ASCII-like `VNPU` signature |
 | `0x004` | `REVISION` | RO | revision-dependent | `1` for revision A, `2` for revision B |
-| `0x008` | `CAPABILITIES` | RO | revision-dependent | Feature bitmap |
+| `0x008` | `CAPABILITIES` | RO | `0` | Reserved feature bitmap |
 | `0x00C` | `CONTROL` | WO/W1S | `0` | Start/reset command register |
 | `0x010` | `STATUS` | RO | `STATUS_IDLE` | Device state |
 | `0x014` | `IRQ_STATUS` | RW1C | `0` | Pending interrupt bits |
@@ -68,20 +68,13 @@ Access: read-only
 
 | Bit | Name | Meaning |
 |---:|---|---|
-| 0 | `CAP_DOT_INT8` | INT8 dot product is supported |
-| 1 | `CAP_JOB_ID` | `JOB_ID` register is supported |
-| 2 | `CAP_VARIABLE_LENGTH` | Vector length 8 or 16 is supported |
-| 3 | `CAP_SEPARATE_ERROR_IRQ` | Error IRQ can be distinguished from completion IRQ |
-| 4 | `CAP_FAULT_INJECTION` | Runtime fault injection is supported |
+| 0 | Reserved | Reserved for future feature discovery |
+| 1 | Reserved | Reserved for future feature discovery |
+| 2 | Reserved | Reserved for future feature discovery |
+| 3 | Reserved | Reserved for future feature discovery |
+| 4 | Reserved | Reserved for future feature discovery |
 
-Planned capability values:
-
-| Revision | Capabilities |
-|---|---|
-| A | `CAP_DOT_INT8 | CAP_FAULT_INJECTION` |
-| B | `CAP_DOT_INT8 | CAP_JOB_ID | CAP_VARIABLE_LENGTH | CAP_SEPARATE_ERROR_IRQ | CAP_FAULT_INJECTION` |
-
-The driver and HAL should prefer capability checks over scattered revision checks.
+The current MVP reserves this register. Reads return `0`, and software must not infer support for dot-product, fault injection, job ID, vector-length, or separate error-IRQ behavior from this register yet.
 
 ## Control
 
@@ -95,14 +88,14 @@ Access: write-only, write-one action
 
 Writing `CONTROL_START` begins one operation if the device is idle and the request is valid. The MVP supports only one outstanding operation.
 
-Writing `CONTROL_RESET` returns the device to idle state, clears pending IRQ status, and clears the last error code.
+Writing `CONTROL_RESET` returns the device to idle state, clears pending IRQ status, clears the last error code, and clears the fault state.
 
 ## Status
 
 Offset: `0x010`  
 Access: read-only
 
-| Bit | Name | Meaning |
+| Value | Name | Meaning |
 |---:|---|---|
 | 0 | `STATUS_IDLE` | Device is ready for a new command |
 | 1 | `STATUS_BUSY` | Operation is in progress |
@@ -144,6 +137,7 @@ Access: read-only
 | 3 | `VNPU_ERR_FORCED` | Fault injection forced an error |
 | 4 | `VNPU_ERR_UNSUPPORTED_REVISION` | Unsupported revision |
 | 5 | `VNPU_ERR_INTERNAL` | Internal device-model error |
+| 6 | `VNPU_ERR_DONE` | Device status is done, read result.|
 
 ## Job ID
 
@@ -231,6 +225,7 @@ Access: read/write
 | 3 | `FAULT_FORCE_ERROR` | Finish with a device error |
 
 Faults are test-only behavior and must be deterministic.
+`FAULT_CONTROL` allows only one active fault bit. If software writes multiple bits, the device selects the lowest-numbered set bit and ignores the rest.
 
 ## Planned State Machine
 
@@ -241,7 +236,8 @@ RESET
             -> BUSY
                  -> DONE
                     -> IDLE, if result is read.
-                 -> ERROR
+
+                 -> ERROR until RESET
                  -> BUSY until RESET when FAULT_STUCK_BUSY is active
        -> START while BUSY
             -> remain BUSY, expose VNPU_ERR_BUSY
@@ -255,7 +251,7 @@ The Linux driver must:
 
 - verify `DEVICE_ID`;
 - reject unsupported `REVISION`;
-- read `CAPABILITIES` during probe;
+- tolerate `CAPABILITIES == 0` during probe;
 - validate `VECTOR_LENGTH` before starting an operation;
 - enable IRQs before writing `CONTROL_START`;
 - wait with a bounded timeout;

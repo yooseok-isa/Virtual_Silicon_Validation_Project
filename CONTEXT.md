@@ -274,7 +274,7 @@ Class:     processing accelerator or other documented experimental choice
 |---:|---|---|---:|---|
 | `0x000` | `DEVICE_ID` | RO | `0x564E5055` | ASCII-like `VNPU` device signature |
 | `0x004` | `REVISION` | RO | revision-dependent | `1` for A, `2` for B |
-| `0x008` | `CAPABILITIES` | RO | revision-dependent | Feature bitmap |
+| `0x008` | `CAPABILITIES` | RO | `0` | Reserved feature bitmap |
 | `0x00C` | `CONTROL` | WO/W1S | `0` | Start or reset command |
 | `0x010` | `STATUS` | RO | `IDLE` | Device state |
 | `0x014` | `IRQ_STATUS` | RW1C | `0` | Pending completion/error IRQs |
@@ -293,19 +293,13 @@ Class:     processing accelerator or other documented experimental choice
 
 | Bit | Name | Meaning |
 |---:|---|---|
-| 0 | `CAP_DOT_INT8` | INT8 dot product is supported |
-| 1 | `CAP_JOB_ID` | `JOB_ID` is supported |
-| 2 | `CAP_VARIABLE_LENGTH` | Vector length 8 or 16 is supported |
-| 3 | `CAP_SEPARATE_ERROR_IRQ` | Error IRQ is distinguishable from completion IRQ |
-| 4 | `CAP_FAULT_INJECTION` | Test-only runtime fault injection is supported |
+| 0 | Reserved | Reserved for future feature discovery |
+| 1 | Reserved | Reserved for future feature discovery |
+| 2 | Reserved | Reserved for future feature discovery |
+| 3 | Reserved | Reserved for future feature discovery |
+| 4 | Reserved | Reserved for future feature discovery |
 
-Recommended capability sets:
-
-```text
-Revision A: CAP_DOT_INT8 | CAP_FAULT_INJECTION
-Revision B: CAP_DOT_INT8 | CAP_JOB_ID | CAP_VARIABLE_LENGTH |
-            CAP_SEPARATE_ERROR_IRQ | CAP_FAULT_INJECTION
-```
+The current MVP reserves this register. Reads return `0`, and software must not infer feature support from `CAPABILITIES` yet.
 
 #### `CONTROL`
 
@@ -369,8 +363,8 @@ RESET
   └─> IDLE
         ├─ START with valid parameters
         │    └─> BUSY
-        │          ├─ normal completion ─> DONE ─> IDLE on next START/RESET
-        │          ├─ forced error ──────> ERROR ─> IDLE on next START/RESET
+        │          ├─ normal completion ─> DONE ─> IDLE when RESULT is read
+        │          ├─ forced error ──────> ERROR until RESET
         │          └─ STUCK_BUSY ────────> BUSY until RESET
         ├─ START while BUSY
         │    └─ retain BUSY and expose VNPU_ERR_BUSY
@@ -380,12 +374,13 @@ RESET
 
 Behavioral rules:
 
-- `START` clears prior `DONE`, `ERROR`, IRQ status, and error code before beginning a valid operation.
-- `RESET` clears runtime fault state only if the specification explicitly chooses that behavior; document the decision.
+- `START` clears prior IRQ status and error code before beginning a valid operation.
+- Reading `RESULT` after successful completion returns the device from `DONE` to `IDLE`.
+- `RESET` clears runtime fault state.
+- `ERROR` state is recoverable only through `RESET`.
 - The QEMU device must model completion asynchronously using a QEMU timer or equivalent non-blocking mechanism.
 - Default operation latency should be deterministic and configurable.
-- Revision A may expose all errors through the completion line if it does not advertise separate error IRQ capability.
-- Revision B must distinguish completion and error IRQ status.
+- Error reporting uses `STATUS`, `IRQ_STATUS`, and `ERROR_CODE`; it is not advertised through `CAPABILITIES` in the current MVP.
 
 ### 8.8 Revision Matrix
 
@@ -395,11 +390,11 @@ Behavioral rules:
 | Vector length | Fixed 8 | Fixed 16 |
 | Job ID | No; reads zero, writes ignored | Yes |
 | Completion IRQ | Yes | Yes |
-| Separate error IRQ status | No | Yes |
+| Error IRQ status bit | Yes | Yes |
 | Fault injection | Yes | Yes, with clearer error reporting |
 | HAL-visible API | Same | Same |
 
-The HAL must use `CAPABILITIES`, not a scattered set of revision-number checks, wherever possible.
+The HAL must tolerate `CAPABILITIES == 0`; revision differences are handled through the documented register contract until feature discovery is introduced.
 
 ---
 
@@ -578,7 +573,7 @@ The HAL must:
 - hide raw `ioctl` and file-descriptor handling;
 - provide RAII resource management;
 - expose revision-independent operations;
-- query and use capabilities;
+- tolerate reserved capabilities;
 - translate driver/device failures into structured C++ errors;
 - support unit testing without QEMU through a mock backend;
 - avoid exposing register offsets to callers.
@@ -612,10 +607,10 @@ MockVnpuDevice    # deterministic unit-test backend
 
 ### 10.3 HAL Behavior
 
-- Detect capabilities once during initialization and cache immutable information.
+- Read capabilities once during initialization and tolerate the reserved value `0`.
 - Validate vector lengths before calling the driver.
 - Keep the public API identical for revision A and B.
-- Handle missing `JOB_ID` capability internally.
+- Treat `JOB_ID` as unsupported until revision B support is implemented.
 - Map Linux `errno`, driver status, and device error into distinguishable error categories.
 - Produce no hidden retries except where explicitly documented.
 - Include Doxygen-compatible API comments.
@@ -648,7 +643,7 @@ JSON output must be stable enough for pytest to parse. Human-readable output may
 
 GoogleTest must cover at least:
 
-- capability parsing;
+- reserved capability handling;
 - revision A fixed-length behavior;
 - revision B fixed-length behavior;
 - unsupported length rejection;
@@ -694,7 +689,7 @@ The reference must validate:
 |---|---|
 | `test_device_enumeration` | QEMU exposes the expected PCI device |
 | `test_driver_probe` | Driver binds and creates `/dev/vnpu0` |
-| `test_device_info` | Device ID, revision, and capabilities are correct |
+| `test_device_info` | Device ID, revision, and reserved capabilities are correct |
 | `test_dot_product_basic` | Basic successful operation |
 | `test_dot_product_negative_values` | Signed INT8 handling |
 | `test_dot_product_boundaries` | INT8 min/max and result range |
@@ -748,8 +743,8 @@ The project should show meaningful test-first development for several core behav
 Recommended commit pattern:
 
 ```text
-test: add failing capability parser test
-feat: implement capability parser
+test: add reserved capability handling test
+feat: tolerate reserved capabilities
 
 test: add IRQ timeout integration case
 feat: add driver timeout and reset recovery
@@ -760,7 +755,7 @@ feat: implement revision B vector-length support
 
 Not every setup commit needs to be test-first, but at least the following features should have visible test-before-fix history:
 
-- capability parsing;
+- reserved capability handling;
 - IRQ timeout handling;
 - reset recovery;
 - revision B behavior;
@@ -964,7 +959,7 @@ Good candidate cases include:
 - stale completion state;
 - resource cleanup on failed probe;
 - timeout recovery leaving BUSY set;
-- revision capability parsing bug;
+- reserved capability handling bug;
 - MMIO packing/sign-extension bug;
 - module unload race.
 
@@ -1048,7 +1043,7 @@ Tasks:
 - add QEMU device skeleton;
 - define local PCI ID;
 - add BAR0;
-- add fixed `DEVICE_ID`, `REVISION`, and `CAPABILITIES` registers;
+- add fixed `DEVICE_ID`, `REVISION`, and reserved `CAPABILITIES` registers;
 - create a basic enumeration test.
 
 Acceptance criteria:
@@ -1132,10 +1127,8 @@ Acceptance criteria:
 
 Tasks:
 
-- implement revision B capabilities;
 - support revision B vector length 16;
 - support job ID;
-- support separate error IRQ status;
 - implement Python reference model;
 - implement pytest functional, fault, and revision tests;
 - parameterize the same test logic across revisions;
@@ -1207,7 +1200,7 @@ The project may be called complete only when all mandatory conditions below are 
 
 - C++ HAL hides raw UAPI details;
 - Linux and mock backends exist;
-- revision differences are capability-driven;
+- revision differences follow the documented register contract;
 - unit tests pass;
 - JSON CLI is usable by pytest;
 - API documentation is generated or build-checked.
@@ -1262,7 +1255,7 @@ Any stretch goal must have its own requirements, tests, and documentation. It mu
 | C++/Python integration expands scope | Keep Python calling the JSON CLI. pybind11 remains a stretch goal. |
 | CI build time is excessive | Split fast and integration workflows and cache pinned source/build artifacts. |
 | DMA consumes schedule | Do not implement DMA before MVP completion. |
-| Revision behavior looks artificial | Keep differences realistic: capability discovery, job IDs, length support, and error reporting. Document rationale. |
+| Revision behavior looks artificial | Keep differences realistic: job IDs, length support, and error reporting. Document rationale. |
 | Driver error path is hard to test | Add QEMU boot-time properties and runtime faults that intentionally trigger probe and execution failures. |
 | Project is mistaken for real silicon work | Repeat the virtual-platform limitation in README, documentation, CV wording, and demo. |
 

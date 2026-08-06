@@ -276,7 +276,7 @@ Class:     processing accelerator or other documented experimental choice
 |---:|---|---|---:|---|
 | `0x000` | `DEVICE_ID` | RO | `0x564E5055` | ASCII-like `VNPU` Device Signature |
 | `0x004` | `REVISION` | RO | Revision-dependent | A는 `1`, B는 `2` |
-| `0x008` | `CAPABILITIES` | RO | Revision-dependent | Feature Bitmap |
+| `0x008` | `CAPABILITIES` | RO | `0` | Reserved Feature Bitmap |
 | `0x00C` | `CONTROL` | WO/W1S | `0` | Start 또는 Reset Command |
 | `0x010` | `STATUS` | RO | `IDLE` | Device State |
 | `0x014` | `IRQ_STATUS` | RW1C | `0` | Pending Completion/Error IRQ |
@@ -295,19 +295,13 @@ Class:     processing accelerator or other documented experimental choice
 
 | Bit | Name | 의미 |
 |---:|---|---|
-| 0 | `CAP_DOT_INT8` | INT8 Dot Product 지원 |
-| 1 | `CAP_JOB_ID` | `JOB_ID` 지원 |
-| 2 | `CAP_VARIABLE_LENGTH` | Vector Length 8 또는 16 지원 |
-| 3 | `CAP_SEPARATE_ERROR_IRQ` | Error IRQ를 Completion IRQ와 구분 가능 |
-| 4 | `CAP_FAULT_INJECTION` | Test-only Runtime Fault Injection 지원 |
+| 0 | Reserved | 향후 Feature Discovery를 위해 예약 |
+| 1 | Reserved | 향후 Feature Discovery를 위해 예약 |
+| 2 | Reserved | 향후 Feature Discovery를 위해 예약 |
+| 3 | Reserved | 향후 Feature Discovery를 위해 예약 |
+| 4 | Reserved | 향후 Feature Discovery를 위해 예약 |
 
-권장 Capability Set:
-
-```text
-Revision A: CAP_DOT_INT8 | CAP_FAULT_INJECTION
-Revision B: CAP_DOT_INT8 | CAP_JOB_ID | CAP_VARIABLE_LENGTH |
-            CAP_SEPARATE_ERROR_IRQ | CAP_FAULT_INJECTION
-```
+현재 MVP에서는 이 Register를 Reserved로 둔다. Read는 `0`을 반환하며, Software는 아직 `CAPABILITIES`에서 Feature 지원 여부를 추론하면 안 된다.
 
 #### `CONTROL`
 
@@ -371,8 +365,8 @@ RESET
   └─> IDLE
         ├─ START with valid parameters
         │    └─> BUSY
-        │          ├─ normal completion ─> DONE ─> IDLE on next START/RESET
-        │          ├─ forced error ──────> ERROR ─> IDLE on next START/RESET
+        │          ├─ normal completion ─> DONE ─> IDLE when RESULT is read
+        │          ├─ forced error ──────> ERROR until RESET
         │          └─ STUCK_BUSY ────────> BUSY until RESET
         ├─ START while BUSY
         │    └─ retain BUSY and expose VNPU_ERR_BUSY
@@ -382,12 +376,13 @@ RESET
 
 Behavior Rule:
 
-- `START`는 유효한 Operation을 시작하기 전에 이전 `DONE`, `ERROR`, IRQ Status 및 Error Code를 Clear한다.
-- `RESET`이 Runtime Fault State도 Clear할지는 Specification에서 명시적으로 결정하고 문서화한다.
+- `START`는 유효한 Operation을 시작하기 전에 이전 IRQ Status 및 Error Code를 Clear한다.
+- 성공적으로 완료된 뒤 `RESULT`를 Read하면 Device는 `DONE`에서 `IDLE`로 복귀한다.
+- `RESET`은 Runtime Fault State도 Clear한다.
+- `ERROR` State는 `RESET`으로만 복구할 수 있다.
 - QEMU Device는 QEMU Timer 또는 동등한 Non-blocking Mechanism을 사용해 Completion을 Asynchronous하게 모델링한다.
 - 기본 Operation Latency는 결정적이고 설정 가능해야 한다.
-- Revision A가 Separate Error IRQ Capability를 Advertise하지 않는 경우 모든 Error를 Completion Line으로 노출할 수 있다.
-- Revision B는 Completion과 Error IRQ Status를 구분해야 한다.
+- Error Reporting은 `STATUS`, `IRQ_STATUS`, `ERROR_CODE`를 사용하며, 현재 MVP에서는 `CAPABILITIES`로 Advertise하지 않는다.
 
 ### 8.8 Revision Matrix
 
@@ -397,11 +392,11 @@ Behavior Rule:
 | Vector Length | 8 고정 | 16 고정 |
 | Job ID | 미지원; Read는 0, Write는 무시 | 지원 |
 | Completion IRQ | 지원 | 지원 |
-| Separate Error IRQ Status | 미지원 | 지원 |
+| Error IRQ Status Bit | 지원 | 지원 |
 | Fault Injection | 지원 | 지원, 더 명확한 Error Reporting |
 | HAL-visible API | 동일 | 동일 |
 
-HAL은 가능한 한 Revision Number Check를 여러 위치에 흩어 놓지 말고 `CAPABILITIES`를 사용해야 한다.
+HAL은 `CAPABILITIES == 0`을 허용해야 한다. Feature Discovery가 도입되기 전까지 Revision 차이는 문서화된 Register Contract로 처리한다.
 
 ---
 ## 9. Linux Driver 명세
@@ -579,7 +574,7 @@ HAL은 다음을 수행해야 한다.
 - Raw `ioctl` 및 File Descriptor Handling을 숨김;
 - RAII Resource Management 제공;
 - Revision-independent Operation 노출;
-- Capability를 Query하고 사용;
+- Reserved Capability를 허용;
 - Driver/Device Failure를 구조화된 C++ Error로 변환;
 - Mock Backend를 통해 QEMU 없이 Unit Test 지원;
 - Caller에게 Register Offset을 노출하지 않음.
@@ -613,10 +608,10 @@ MockVnpuDevice    # deterministic unit-test backend
 
 ### 10.3 HAL 동작
 
-- Initialization 과정에서 Capability를 한 번 Detect하고 Immutable Information을 Cache한다.
+- Initialization 과정에서 Capability를 한 번 Read하고 Reserved 값 `0`을 허용한다.
 - Driver를 호출하기 전에 Vector Length를 검증한다.
 - Revision A와 B에 동일한 Public API를 유지한다.
-- `JOB_ID` Capability가 없는 경우 내부에서 처리한다.
+- Revision B 지원 전까지 `JOB_ID`를 Unsupported로 처리한다.
 - Linux `errno`, Driver Status, Device Error를 구분 가능한 Error Category로 Mapping한다.
 - 명시적으로 문서화한 경우를 제외하고 숨겨진 Retry를 수행하지 않는다.
 - Doxygen-compatible API Comment를 포함한다.
@@ -649,7 +644,7 @@ JSON Output은 pytest가 안정적으로 Parse할 수 있어야 한다. Human-re
 
 GoogleTest는 최소한 다음을 검증해야 한다.
 
-- Capability Parsing;
+- Reserved Capability Handling;
 - Revision A Fixed-length Behavior;
 - Revision B Fixed-length Behavior;
 - Unsupported Length 거부;
@@ -695,7 +690,7 @@ Reference는 다음을 검증해야 한다.
 |---|---|
 | `test_device_enumeration` | QEMU가 기대한 PCI Device를 노출하는지 확인 |
 | `test_driver_probe` | Driver가 Bind되고 `/dev/vnpu0`을 생성하는지 확인 |
-| `test_device_info` | Device ID, Revision, Capability 정확성 확인 |
+| `test_device_info` | Device ID, Revision, Reserved Capability 정확성 확인 |
 | `test_dot_product_basic` | 기본 정상 Operation |
 | `test_dot_product_negative_values` | Signed INT8 처리 확인 |
 | `test_dot_product_boundaries` | INT8 Min/Max 및 Result Range 확인 |
@@ -749,8 +744,8 @@ Fast Suite와 Slow Suite를 분리할 수 있어야 한다.
 권장 Commit Pattern:
 
 ```text
-test: add failing capability parser test
-feat: implement capability parser
+test: add reserved capability handling test
+feat: tolerate reserved capabilities
 
 test: add IRQ timeout integration case
 feat: add driver timeout and reset recovery
@@ -761,7 +756,7 @@ feat: implement revision B vector-length support
 
 모든 Setup Commit이 Test-first일 필요는 없다. 그러나 최소한 다음 기능은 Test가 Fix/Implementation보다 먼저 추가된 이력이 보여야 한다.
 
-- Capability Parsing;
+- Reserved Capability Handling;
 - IRQ Timeout Handling;
 - Reset Recovery;
 - Revision B Behavior;
@@ -966,7 +961,7 @@ Symptom
 - Stale Completion State;
 - Failed Probe의 Resource Cleanup;
 - Timeout Recovery 후 BUSY가 남는 문제;
-- Revision Capability Parsing Bug;
+- Reserved Capability Handling Bug;
 - MMIO Packing/Sign-extension Bug;
 - Module Unload Race.
 
@@ -1049,7 +1044,7 @@ Acceptance Criteria:
 - QEMU Device Skeleton 추가;
 - Local PCI ID 정의;
 - BAR0 추가;
-- 고정된 `DEVICE_ID`, `REVISION`, `CAPABILITIES` Register 추가;
+- 고정된 `DEVICE_ID`, `REVISION`, Reserved `CAPABILITIES` Register 추가;
 - 기본 Enumeration Test 생성.
 
 Acceptance Criteria:
@@ -1133,10 +1128,8 @@ Acceptance Criteria:
 
 작업:
 
-- Revision B Capability 구현;
 - Revision B Vector Length 16 지원;
 - Job ID 지원;
-- Separate Error IRQ Status 지원;
 - Python Reference Model 구현;
 - pytest Functional, Fault, Revision Test 구현;
 - 동일 Test Logic을 Revision별로 Parameterize;
@@ -1208,7 +1201,7 @@ Acceptance Criteria:
 
 - C++ HAL이 Raw UAPI Detail을 숨김;
 - Linux 및 Mock Backend 존재;
-- Revision 차이는 Capability-driven 방식으로 처리;
+- Revision 차이는 문서화된 Register Contract를 따른다;
 - Unit Test 통과;
 - JSON CLI를 pytest에서 사용 가능;
 - API Documentation 생성 또는 Build Check.
@@ -1263,7 +1256,7 @@ MVP 완료 후 남은 시간에 따라 다음 중 최대 1~2개만 선택한다.
 | C++/Python Integration이 범위를 확장함 | Python은 JSON CLI를 호출하도록 유지한다. pybind11은 Stretch Goal이다. |
 | CI Build Time이 과도함 | Fast와 Integration Workflow를 분리하고 Pinned Source/Build Artifact를 Cache한다. |
 | DMA가 일정을 소모함 | MVP 완료 전 DMA를 구현하지 않는다. |
-| Revision Behavior가 인위적으로 보임 | Capability Discovery, Job ID, Length Support, Error Reporting과 같은 현실적인 차이를 유지하고 근거를 문서화한다. |
+| Revision Behavior가 인위적으로 보임 | Job ID, Length Support, Error Reporting과 같은 현실적인 차이를 유지하고 근거를 문서화한다. |
 | Driver Error Path Test가 어려움 | Probe 및 Execution Failure를 의도적으로 발생시키는 QEMU Boot-time Property와 Runtime Fault를 추가한다. |
 | 프로젝트가 실제 Silicon 작업으로 오인됨 | README, Documentation, CV 문구 및 Demo에서 Virtual-platform Limitation을 반복해 명시한다. |
 

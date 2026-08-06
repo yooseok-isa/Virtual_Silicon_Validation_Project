@@ -24,21 +24,8 @@
 #define BIT(n) (1 << (n))
 
 #define VEC_LEN_A 0x08
-#define VEC_LEN_B 0x10
-
 // Revison
 #define VNPU_REVISION_A 0x1
-#define VNPU_REVISION_B 0x2
-
-// Capabilities
-#define SUP 					1U //supported
-#define NOSUP 					0U //unsupported
-#define CAP_DOT_INT8 			((NOSUP) << 0)
-#define CAP_JOB_ID 				((NOSUP) << 1)
-#define CAP_VARIABLE_LENGTH 	((NOSUP) << 2)
-#define CAP_SEPARATE_ERROR_IRQ 	((NOSUP) << 3)
-#define CAP_FAULT_INJECTION 	((NOSUP) << 4)
-#define CAPABILITIES 			(CAP_DOT_INT8 | CAP_JOB_ID | CAP_VARIABLE_LENGTH | CAP_SEPARATE_ERROR_IRQ | CAP_FAULT_INJECTION)
 
 #define CONTROL_START BIT(0)
 #define CONTROL_RESET BIT(1)
@@ -52,7 +39,7 @@
 #define IRQ_ERROR BIT(1)
 
 #define VNPU_ERR_NONE 0x0
-#define VNPU_ERR_INVALID_LENGHT 0x1
+#define VNPU_ERR_INVALID_LENGTH 0x1
 #define VNPU_ERR_BUSY 0x2
 #define VNPU_ERR_FORCED 0x3
 #define VNPU_ERR_UNSUPPORTED_REVISION 0x4
@@ -73,24 +60,32 @@ struct VnpuState {
 	uint32_t err_code;
 	uint32_t capabilities;
 
-	int32_t input_a[4];
-	int32_t input_b[4];
+	uint32_t input_a[4];
+	uint32_t input_b[4];
 	int32_t result;
 	int32_t revision;
 
 	uint32_t control;
 
-	QemuThread thread;
-	QemuMutex thr_mutex;
-	QemuCond thr_cond;
-	bool stopping;
-
 	uint32_t vec_len;
 	uint32_t irq_status;
 	uint32_t irq_enable;
+	uint32_t fault_control;
 
 	QEMUTimer dot_timer;
 };
+
+static uint64_t vnpu_mmio_read(void *opaque, hwaddr addr, unsigned size);
+static void vnpu_mmio_write(void *opaque, hwaddr addr, uint64_t val,
+                            unsigned size);
+static void vnpu_update_irq(VnpuState *vnpu);
+static int32_t unpack_i8(uint32_t input, unsigned int shift);
+static int32_t vnpu_dot_product(void *opaque);
+static void vnpu_dot_timer(void *opaque);
+static void vnpu_register_init(VnpuState *vnpu);
+static void pci_vnpu_realize(PCIDevice *pdev, Error **errp);
+static void pci_vnpu_uninit(PCIDevice *pdev);
+static void vnpu_class_init(ObjectClass *class, const void *data);
 
 static uint64_t vnpu_mmio_read(void *opaque, hwaddr addr, unsigned size)
 {
@@ -155,17 +150,12 @@ static uint64_t vnpu_mmio_read(void *opaque, hwaddr addr, unsigned size)
 		break;
 	case 0x140:
 		val = vnpu->result;
-		vnpu->status = STATUS_IDLE;
+		if(vnpu->status == STATUS_DONE){
+			vnpu->status = STATUS_IDLE;
+		}
 		break;
 	case 0x180:
-		if(vnpu->status == STATUS_BUSY){
-			val = FAULT_STUCK_BUSY;
-			break;
-		}
-		if(vnpu->status == STATUS_DONE && vnpu->irq_status != IRQ_COMPLETION){
-			val = FAULT_IRQ_DROP;
-			break;
-		}
+		val = vnpu->fault_control;
 		break;
 	}
 	return val;
@@ -178,7 +168,7 @@ static void vnpu_mmio_write(void *opaque, hwaddr addr, uint64_t val,
     VnpuState *vnpu = opaque;
 
 	if(size !=4) {
-		return NULL;
+		return;
 	}
 	switch (addr) {
 		case 0x00C: //CONTROL
@@ -187,6 +177,7 @@ static void vnpu_mmio_write(void *opaque, hwaddr addr, uint64_t val,
 				vnpu->status = STATUS_IDLE;
 				vnpu->irq_status = 0;
 				vnpu->err_code = 0;
+				vnpu->fault_control = 0;
 				vnpu_update_irq(vnpu);
 				//stopping
 				break;
@@ -194,13 +185,19 @@ static void vnpu_mmio_write(void *opaque, hwaddr addr, uint64_t val,
 			if(val & CONTROL_START){
 				if(vnpu->status != STATUS_IDLE){
 					vnpu->irq_status |= IRQ_ERROR;
-					vnpu->err_code = VNPU_ERR_BUSY;
+					if(vnpu->status == STATUS_BUSY)
+						vnpu->err_code = VNPU_ERR_BUSY;
+					else if(vnpu->status == STATUS_DONE)
+						vnpu->err_code = VNPU_ERR_BUSY;
 					vnpu_update_irq(vnpu);
 					break;
 					// send VNPU_ERR_BUSY
 					/* Device is not idle. */
 				}
 				vnpu->status = STATUS_BUSY;
+				vnpu->irq_status = 0;
+				vnpu_update_irq(vnpu);
+				vnpu->err_code = 0;
 				timer_mod(&vnpu->dot_timer, qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL)+100);
 				break;
 			}
@@ -217,15 +214,17 @@ static void vnpu_mmio_write(void *opaque, hwaddr addr, uint64_t val,
 			//reserved
 			break;
 		case 0x024: //VECTOR_LENGTH
-			if(val == 8)
-				if(vnpu->revision == 1){
-					vnpu->vec_len = val;
-				}
-				else{
-					vnpu->err_code = VNPU_ERR_INVALID_LENGHT;
-					vnpu->status = STATUS_ERROR;
-					vnpu_update_irq(vnpu);
-				}
+			if(val == VEC_LEN_A){
+				vnpu->vec_len = val;
+				break;
+			}
+			else{
+				vnpu->err_code = VNPU_ERR_INVALID_LENGTH;
+				vnpu->status = STATUS_ERROR;
+				vnpu->irq_status = IRQ_ERROR;
+				vnpu_update_irq(vnpu);
+				break;
+			}
 			break;
 		case 0x100: //write input_a
 			vnpu->input_a[0] = (uint32_t)val;
@@ -252,11 +251,13 @@ static void vnpu_mmio_write(void *opaque, hwaddr addr, uint64_t val,
 			vnpu->input_b[3] = (uint32_t)val;
 			break;
 		case 0x180: //write FAULT_CONTROL
+			val = val & 0x0F;
+			vnpu->fault_control = val & (0U - val);
 			break;
 
 	}
 }
-static const vnpu_update_irq(VnpuState *vnpu){
+static void vnpu_update_irq(VnpuState *vnpu){
 
 	bool pending = vnpu->irq_status & vnpu->irq_enable;
 	pci_set_irq(&vnpu->pdev , pending);
@@ -278,22 +279,22 @@ static const MemoryRegionOps vnpu_mmio_ops = {
 
 };
 
-static uint32_t unpack_i8(uint32_t input, unsigned int shift){
+static int32_t unpack_i8(uint32_t input, unsigned int shift){
 
 	uint32_t x = (input >> (shift*8)) & 0xFFU;
 	return (x & 0x80U) ? (int32_t)(x-0x100U) : (int32_t)x;
 }
 
-static uint32_t vnpu_dot_thread(void *opaque){
+static int32_t vnpu_dot_product(void *opaque){
 	
 	VnpuState *vnpu = opaque;
-	int32_t *input_a = vnpu->input_a;
-	int32_t *input_b = vnpu->input_b;
+	uint32_t *input_a = vnpu->input_a;
+	uint32_t *input_b = vnpu->input_b;
 	int32_t result = 0;
 
 	switch(vnpu->vec_len){
 		case 0x08:
-			for(int i=0; i<4 ; i++){
+			for(int i=0; i<2 ; i++){
 				result += unpack_i8(input_a[i], 0) * unpack_i8(input_b[i], 0);
 				result += unpack_i8(input_a[i], 1) * unpack_i8(input_b[i], 1);
 				result += unpack_i8(input_a[i], 2) * unpack_i8(input_b[i], 2);
@@ -311,14 +312,26 @@ static uint32_t vnpu_dot_thread(void *opaque){
 static void vnpu_dot_timer(void *opaque){
 	
 	VnpuState *vnpu = opaque;
-	vnpu->result = vnpu_dot_thread(vnpu);
+	vnpu->result = vnpu_dot_product(vnpu);
 	vnpu->status = STATUS_DONE;
-	vnpu->irq_status |= IRQ_COMPLETION;
+	vnpu->irq_status = IRQ_COMPLETION;
 	
+	if(vnpu->fault_control & FAULT_IRQ_DROP){
+		vnpu->irq_status = 0;
+	}
+	else if(vnpu->fault_control & FAULT_STUCK_BUSY){
+		vnpu->status = STATUS_BUSY;
+		vnpu->irq_status = 0;
+	}
+	else if(vnpu->fault_control & FAULT_CORRUPT_RESULT){
+		vnpu->result ^= 1; // Deterministically alter result.
+	}
+	else if(vnpu->fault_control & FAULT_FORCE_ERROR){
+		vnpu->status = STATUS_ERROR;
+		vnpu->err_code = VNPU_ERR_FORCED;
+		vnpu->irq_status = IRQ_ERROR;
+	}
 	vnpu_update_irq(vnpu);
-  /* 	if (vnpu->irq_enable & IRQ_COMPLETION) { */
-	/* 	pci_set_irq(vnpu->pdev, 1); */
-  /* } */
 }
 
 static void vnpu_register_init(VnpuState *vnpu){
@@ -332,6 +345,7 @@ static void vnpu_register_init(VnpuState *vnpu){
 	vnpu->irq_enable = 0;
 	vnpu->err_code = 0;
 	vnpu->result = 0;
+	vnpu->fault_control = 0;
 	memset(vnpu->input_a, 0, sizeof(vnpu->input_a));
 	memset(vnpu->input_b, 0, sizeof(vnpu->input_b));
 
@@ -345,14 +359,15 @@ static void pci_vnpu_realize(PCIDevice *pdev, Error **errp){
 
 	pci_config_set_interrupt_pin(pci_conf, 1);
 	
-	qemu_mutex_init(&vnpu->thr_mutex);
-	qemu_cond_init(&vnpu->thr_cond);
+	vnpu_register_init(vnpu);
+	/* qemu_mutex_init(&vnpu->thr_mutex); */
+	/* qemu_cond_init(&vnpu->thr_cond); */
 	timer_init_ms(&vnpu->dot_timer, QEMU_CLOCK_VIRTUAL, vnpu_dot_timer, vnpu);
 
-	memory_region_init_io(&vnpu->mmio, OBJECT(vpnu), &vpnu_mmio_ops, vpnu, "vpnu-mmio", 0x1000);
+
+	memory_region_init_io(&vnpu->mmio, OBJECT(vnpu), &vnpu_mmio_ops, vnpu, "vnpu-mmio", 0x1000);
 	pci_register_bar(pdev, 0, PCI_BASE_ADDRESS_SPACE_MEMORY, &vnpu->mmio);
 	
-	vnpu_register_init(vnpu);
 }
 
 static void pci_vnpu_uninit(PCIDevice *pdev)
@@ -390,6 +405,4 @@ static const TypeInfo vnpu_types[] = {
 };
 
 DEFINE_TYPES(vnpu_types)
-
-
 
