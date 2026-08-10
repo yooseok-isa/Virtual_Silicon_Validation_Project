@@ -1,0 +1,44 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check required files
+        run: |
+          test -f CONTEXT.md
+          test -f PROJECT_STATUS.md
+          test -f docs/versions.md
+          test -f buildroot/configs/vnpu_qemu_x86_64_defconfig
+          test -f qemu-device/patches/0001-hw-misc-add-vnpu-pci-device.patch
+          test -f qemu-device/tests/Makefile
+          test -f qemu-device/tests/scripts/vnpu-devmem-smoke.sh
+          test -f qemu-device/tests/src/vnpu-mmio-smoke.c
+          test -f scripts/setup-sources.sh
+          test -f scripts/run-qemu.sh
+
+      - name: Shell syntax check
+        run: |
+          bash -n scripts/setup-sources.sh
+          bash -n scripts/run-qemu.sh
+          bash -n qemu-device/tests/scripts/vnpu-devmem-smoke.sh
+
+      - name: Build host smoke tools
+        run: |
+          make -C qemu-device/tests clean all
+          make -C qemu-device/tests clean
+
+      - name: QEMU patch dry-run
+        run: |
+          curl -L --fail --retry 3 -o /tmp/qemu-10.2.0.tar.xz https://download.qemu.org/qemu-10.2.0.tar.xz
+          tar -xf /tmp/qemu-10.2.0.tar.xz -C /tmp
+          cd /tmp/qemu-10.2.0
+          patch --dry-run -p1 < "$GITHUB_WORKSPACE/qemu-device/patches/0001-hw-misc-add-vnpu-pci-device.patch"

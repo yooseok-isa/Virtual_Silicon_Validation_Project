@@ -58,7 +58,6 @@ struct VnpuState {
 	MemoryRegion mmio;
 	uint32_t status;
 	uint32_t err_code;
-	uint32_t capabilities;
 
 	uint32_t input_a[4];
 	uint32_t input_b[4];
@@ -104,7 +103,7 @@ static uint64_t vnpu_mmio_read(void *opaque, hwaddr addr, unsigned size)
 		val = vnpu->revision;
 		break;
 	case 0x008:
-		val = CAPABILITIES;
+		//reserved
 		break;
 	case 0x010:
 		val = vnpu->status;
@@ -338,7 +337,6 @@ static void vnpu_register_init(VnpuState *vnpu){
 
 	vnpu->revision = VNPU_REVISION_A;
 	vnpu->vec_len = VEC_LEN_A;
-	vnpu->capabilities = 0;
 	vnpu->control = 0;
 	vnpu->status = STATUS_IDLE;
 	vnpu->irq_status = 0;

@@ -1,6 +1,6 @@
 # Version Record
 
-Last updated: 2026-07-29
+Last updated: 2026-08-07
 
 ## QEMU
 
@@ -42,7 +42,7 @@ Linux kernel x86 boot executable bzImage, version 6.18.7
 
 ```text
 bb314752121210e86ecb5b8d24537001d821a9bc3a0c4d05ecd6299194d6a678  output/images/bzImage
-3959025b08a9739fca10dc99564175fca51e7e270974e08cb504dbd334bb8220  output/images/rootfs.ext4
+f5aabf2c0a3468eea4e4826057ec6f2e48f7823a49cd54e2a6907ed81c5a1f1d  output/images/rootfs.ext4
 ```
 
 ## Boot Evidence
@@ -56,7 +56,7 @@ bb314752121210e86ecb5b8d24537001d821a9bc3a0c4d05ecd6299194d6a678  output/images/
 | Guest root shell | reached |
 | Guest `lspci` | success |
 
-Observed `lspci` output:
+Fresh boot evidence re-recorded on 2026-08-07. Observed `lspci` output remained:
 
 ```text
 00:1f.2 Class 0106: 8086:2922
