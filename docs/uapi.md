@@ -81,8 +81,8 @@ struct vnpu_dot_request {
     __u32 job_id;
     __u32 vector_length;
     __u32 timeout_ms;
-    __s8  input_a[16];
-    __s8  input_b[16];
+    __u32  input_a[4];
+    __u32  input_b[4];
     __s32 result;
     __s32 driver_status;
     __u32 device_error;
@@ -97,14 +97,21 @@ Used by `VNPU_IOCTL_RUN_DOT`.
 | `job_id` | in | Reserved for Revision B; ignored for Revision A |
 | `vector_length` | in | Revision A supports `8` only |
 | `timeout_ms` | in | Maximum wait time for completion |
-| `input_a` | in | Signed INT8 vector A |
-| `input_b` | in | Signed INT8 vector B |
+| `input_a` | in | Packed signed INT8 vector A words |
+| `input_b` | in | Packed signed INT8 vector B words |
 | `result` | out | Signed INT32 dot-product result |
 | `driver_status` | out | Driver-level result code |
 | `device_error` | out | MMIO `ERROR_CODE` on device failure |
 
-For Revision A, only `input_a[0..7]` and `input_b[0..7]` are consumed.
-Userspace should zero the remaining elements for deterministic logs.
+The current UAPI shape mirrors the MMIO packing used by the device model:
+`input_a[0..3]` and `input_b[0..3]` are 32-bit words, each containing four
+packed signed INT8 elements in little-endian byte order.
+
+For Revision A, only `input_a[0..1]` and `input_b[0..1]` are consumed, covering
+elements `0..7`. `input_a[2..3]` and `input_b[2..3]` are reserved for Revision B
+length-16 behavior and are ignored by the current Revision A device. Userspace
+should set the reserved words to zero for deterministic logs and future
+compatibility.
 
 ### `struct vnpu_fault_request`
 
@@ -126,6 +133,9 @@ Used by `VNPU_IOCTL_SET_FAULT`.
 
 The device model accepts only one active fault bit. If multiple bits are set,
 the lowest-numbered bit is selected by the device.
+
+Bits `4..31` are reserved. The current device masks them off, and userspace must
+write them as zero.
 
 ### `struct vnpu_stats`
 
@@ -149,6 +159,26 @@ Returned by `VNPU_IOCTL_GET_STATS`.
 | `timed_out` | Number of timeout paths |
 | `device_errors` | Number of device-reported failures |
 | `resets` | Number of driver-initiated resets |
+
+## Reserved Device Fields
+
+The current `qemu-device/src/vnpu.c` implementation contains reserved registers
+and Revision-B placeholder paths. The driver must preserve these semantics
+instead of inventing behavior that the device model does not implement.
+
+| Device field | MMIO offset / UAPI field | Current behavior | Driver/UAPI rule |
+|---|---:|---|---|
+| `CAPABILITIES` | `0x008` / `vnpu_info.capabilities` | Reads return `0`; no feature bits are implemented | Report `0` and do not infer feature support from this field |
+| `JOB_ID` | `0x020` / `vnpu_dot_request.job_id` | Reads return `0`; writes are ignored | Accept the field for ABI stability, but ignore it for Revision A |
+| Revision B length | `VECTOR_LENGTH == 16` | Dot-product code has a placeholder, but Revision A register writes reject length `16` with `VNPU_ERR_INVALID_LENGTH` | Reject length `16` unless a future Revision B device is explicitly supported |
+| Upper input words | `input_a[2..3]`, `input_b[2..3]` | Stored by MMIO, but not consumed for Revision A length `8` | Require userspace to zero them for Revision A; do not use them in result calculation |
+| Fault mask upper bits | `fault_mask[31:4]` | Device masks unsupported bits off | Driver must mask or reject unsupported bits; userspace must write zero |
+| Unimplemented MMIO offsets | BAR0 offsets outside the documented register map | Reads return zero and writes have no effect in the current model | Driver must not expose raw access to these offsets |
+
+The PCI configuration-space revision currently differs from the MMIO
+`REVISION` register: the QEMU class sets PCI revision `0x10`, while the MMIO
+`REVISION` register returns `1` for Revision A. Driver revision handling must use
+the MMIO `REVISION` register for hardware revision decisions.
 
 ## Driver Status Values
 
@@ -194,7 +224,7 @@ Driver behavior:
 4. Validate `timeout_ms` is nonzero and within the driver maximum.
 5. Acquire the device submission mutex.
 6. Clear stale completion state.
-7. Program input registers and `VECTOR_LENGTH`.
+7. Program packed input registers and `VECTOR_LENGTH`.
 8. Enable completion/error IRQs.
 9. Write `CONTROL_START`.
 10. Wait for IRQ-driven completion with timeout.

@@ -1,10 +1,16 @@
+#ifndef _VNPU_H
+#define _VNPU_H
 
 #include <linux/types.h>
 #include <linux/ioctl.h>
 
 #define VNPU_IOCTL_MAGIC 'VNPU'
 
-#define VNPU_IOCTL_GET_INFO __IOR(VNPU_IOCTL_MAGIC, 0x00, struct vnpu_info)
+#define VNPU_IOCTL_GET_INFO _IOR(VNPU_IOCTL_MAGIC, 0x00, struct vnpu_info)
+#define VNPU_IOCTL_RUN_DOT _IOWR(VNPU_IOCTL_MAGIC, 0x01, struct vnpu_dot_request)
+#define VNPU_IOCTL_RESET _IO(VNPU_IOCTL_MAGIC, 0x02)
+#define VNPU_IOCTL_SET_FAULT _IOW(VNPU_IOCTL_MAGIC, 0x03, struct vnpu_fault_request)
+#define VNPU_IOCTL_GET_STAT _IOR(VNPU_IOCTL_MAGIC, 0x04, struct vnpu_status)
 
 
 struct vnpu_info {
@@ -19,14 +25,14 @@ struct vnpu_dot_request {
 	__u32_job_id;
 	__u32 vector_length;
 	__u32 timeout_ms;
-	__s8 input_a[16];
-	__s8 input_b[16];
+	__u32 input_a[4];
+	__u32 input_b[4];
 	__s32 result;
 	__s32 driver_status;
 	__u32 device_error;
 };
 
-struct vnpu_fault_reques {
+struct vnpu_fault_request {
 	__u32 abi_version;
 	__u32 fault_mask;
 };
@@ -37,5 +43,9 @@ struct vnpu_status {
 	__u64 completed;
 	__u64 timed_out;
 	__u64 device_errors;
+	__u32 input_a[4];
+	__u32 input_b[4];
 	__u64 resets;
 };
+
+#endif _VNPU_H
