@@ -12,6 +12,10 @@
 #define VNPU_IOCTL_SET_FAULT _IOW(VNPU_IOCTL_MAGIC, 0x03, struct vnpu_fault_request)
 #define VNPU_IOCTL_GET_STAT _IOR(VNPU_IOCTL_MAGIC, 0x04, struct vnpu_status)
 
+//driver_status
+#define DRIVER_STATUS_OK 0
+#define DRIVER_STATUS_TIMEOUT 1
+#define DRIVER_STATUS_DEVICE_ERROR 2
 
 struct vnpu_info {
 	__u32 abi_version;
@@ -42,9 +46,7 @@ struct vnpu_status {
 	__u64 submitted;
 	__u64 completed;
 	__u64 timed_out;
-	__u64 device_errors;
-	__u32 input_a[4];
-	__u32 input_b[4];
+	__u64 device_error;
 	__u64 resets;
 };
 
