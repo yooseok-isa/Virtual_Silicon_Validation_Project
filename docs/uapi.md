@@ -59,8 +59,8 @@ reasoning.
 struct vnpu_info {
     __u32 abi_version;
     __u32 device_id;
-    __u32 revision;
-    __u32 capabilities;
+//    __u32 revision; // reserved , not implemented yet.
+//    __u32 capabilities; // reserved, not implemented yet.
 };
 ```
 
@@ -140,7 +140,7 @@ write them as zero.
 ### `struct vnpu_stats`
 
 ```c
-struct vnpu_stats {
+struct vnpu_status {
     __u32 abi_version;
     __u64 submitted;
     __u64 completed;

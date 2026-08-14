@@ -16,12 +16,6 @@
 #define VNPU_VENDOR_ID 0x1B36
 #define VNPU_DEVICE_ID 0x1000
 
-#define VNPU_IOCTL_GET_INFO 0x00
-#define VNPU_IOCTL_RUN_DOT 0x01
-#define VNPU_IOCTL_RESET 0x02
-#define VNPU_IOCTL_SET_FAULT 0x03
-#define VNPU_IOCTL_GET_STAT 0x04
-
 #define VNPU_REG_DEVICE_ID 0x000
 #define VNPU_REG_REVISION 0x004
 #define VNPU_REG_CONTROL 0x00C
@@ -125,7 +119,7 @@ static int vnpu_hw_reset(struct vnpu_device *vnpu){
 
 static int vnpu_probe(struct pci_dev *pdev, const struct pci_device_id *id){
 
-	struct vnpu_device vnpu;
+	struct vnpu_device *vnpu;
 	struct device *dev;
 	int ret;
 	
@@ -159,6 +153,9 @@ static int vnpu_probe(struct pci_dev *pdev, const struct pci_device_id *id){
 	if(!base)
 		return -ENOMEM;
 
+	init_completion(&vnpu->irq_raised);
+	mutex_init(&vnpu->mutex);
+
 	/*
 	 * device의 모든 resource 할당.
 	 */
@@ -167,8 +164,6 @@ static int vnpu_probe(struct pci_dev *pdev, const struct pci_device_id *id){
 		return ret;
 
 
-	init_completion(&vnpu->irq_raised);
-	mutex_init(&vnpu->mutex);
 	
 	devm_request_irq(&pdev->dev, pdev->irq, vnpu_irq_hadnler, IROF_SHARED, dev_name(&pdev->dev), vnpu)
 
@@ -208,8 +203,14 @@ static irqreturn_t vnpu_irq_handler(int irq, void *data){
 	
 	int res = 0;
 	struct vnpu_device *vnpu = data;
+	int irq_status = readl(vnpu->base + VNPU_REG_IRQ_STATUS);
+	writel(VNPU_IRQ_ALL, vnpu->base + VNPU_REG_IRQ_STATUS);
 
-	if(irq == VNPU_IRQ_ERROR){
+	if(!(device_irq & VNPU_IRQ_ALL)){
+		return IRQ_NONE;
+	}
+		
+	if(irq_status & VNPU_IRQ_ERROR){
 		vnpu->device_error = readl(vnpu->base + VNPU_REG_ERROR_CODE);
 		vnpu->device_status = readl(vnpu->base + VNPU_REG_STATUS);
 		vnpu->device_error_num += 1;
@@ -234,9 +235,8 @@ static int vnpu_ioctl(struct file *file, unsigned int cmd, unsigned long arg){
 	switch(cmd){
 		case VNPU_IOCTL_GET_INFO:
 			struct vnpu_info info;
-			if(copy_from_user(&info, (void __user *)arg, sizeof(info)))
-				return -EFAULT;
-			info.abi_version = readl(VNPU_REG_REVISION);
+			
+			info.abi_version = 1;
 			info.device_id = readl(VNPU_REG_DEVICE_ID);
 			res = 0;
 			
@@ -245,48 +245,91 @@ static int vnpu_ioctl(struct file *file, unsigned int cmd, unsigned long arg){
 			break;
 		case VNPU_IOCTL_RUN_DOT:
 			struct vnpu_dot_request dot;
+			int vec_len = 0;
+			int revision = 0;
+			
 			if(copy_from_user(&dot, (void __user *)arg, sizeof(dot)))
 				return -EFAULT;
-			
+
+			revision = readl(vnpu->base + VNPU_REG_REVISION);
+			if(dot.abi_reivsion != revision){
+				dev_err("invalid revistion version\n");
+				return -EINVAL;
+			}
+
+			vec_len = readl(vnpu->base + VNPU_REG_VECTOR_LENGTH);
+			if(dot.vector_length != vec_len){
+				dev_err("invalid length\n");
+				return -EINVAL;
+			}
+
+			if(dot.timeout_ms == 0 || dot.timeout_ms > 1000){
+				dev_err("invalid timeout ms");
+				return -EINVAL;
+			}
 			timeout = msecs_to_jiffies(dot.timeout_ms);
+
+			mutex_lock(&vnpu->mutex);
+			reinit_completion(&vnpu->irq_raised);
+
+			//CLEAR STATUS
+			writel(VNPU_IRQ_ALL, vnpu->base + VNPU_REG_IRQ_STATUS);
+			writel(VNPU_IRQ_ALL, vnpu->base + VNPU_REG_IRQ_ENABLE);
 
 			for(int i=0; i<4; i++){
 				vnpu_set_input_a(dot.input_a[i], i);
 				vnpu_set_input_b(dot.input_b[i], i);
 			}
-			writel(vnpu->vector_length, vnpu->base + VNPU_REG_VECTOR_LENGTH);
+			writel(dot.vector_length, vnpu->base + VNPU_REG_VECTOR_LENGTH);
 			writel(VNPU_CONTROL_START, vnpu->base + VNPU_REG_CONTROL);
 			vnpu->submitted_num += 1;
+			
 			wait_for_completion_timeout(vnpu->irq_raised, timeout);
+			
 			if(!remaining){
+				
 				writel(VNPU_CONTROL_RESET, vnpu->base + VNPU_REG_CONTROL);
 				dot.driver_status = DRIVER_STATUS_TIMEOUT;
 				vnpu->timed_out_num += 1;
+				
+				mutex_unlock(&vnpu->mutex);
+				
+				if(copy_to_user((void __user *)arg), &dot, sizeof(dot));
+					return -EFAULT;
+
 				return -ETIMEDOUT;
 			}
 
 			dot.result = readl(vnpu->base + VNPU_REG_RESULT);
 			dot.driver_status = DRIVER_STATUS_OK;
-	
+			mutex_unlock(&vnpu->mutex);
 			if(copy_to_user((void __user *)arg), &dot, sizeof(dot));
 				return -EFAULT;
 			vnpu->completed_num += 1;
 			break;
 		case VNPU_IOCTL_RESET:
-			vnpu->ioctl_cmd = VNPU_IOCTL_RESET;
-			writel(VNPU_CONTROL_RESET, vnpu->base + VNPU_REG_CONTROL);
-			wait_for_completion(vnpu->irq_raised);
-			vnpu->reset_num += 1;
+			mutex_lock(&vnpu->mutex);
+			
+			res = vnpu_hw_reset(vnpu);
+			if(!ret)
+				vnpu->reset_num += 1;
+			
+			mutex_unlock(&vnpu->mutex);
 			break;
 		case VNPU_IOCTL_SET_FAULT:
 			struct vnpu_fault_request fault;
+
 			if(copy_from_user(&fault, (void __user *)arg, sizeof(fault)))
 				return -EFAULT;
-			writel(fault.fault_mask, vnpu->base + VNPU_REG_FUALT_CONTROL);
-			wait_for_completion(vnpu->irq_raised);
+			
+			mutex_lock(&vnpu->mutex);
+			fault.fault_mask &= 0xf;
+			writel(fault.fault_mask , vnpu->base + VNPU_REG_FUALT_CONTROL);
 			res = 0;
+
 			if(copy_to_user((void __user *)arg), &fault, sizeof(fault));
 				return -EFAULT;
+			mutex_unlock(&vnpu->mutex);
 			break;
 		case VNPU_IOCTL_GET_STAT:
 			struct vnpu_status status;
