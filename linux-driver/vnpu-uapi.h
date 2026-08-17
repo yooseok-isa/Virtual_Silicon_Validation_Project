@@ -4,7 +4,7 @@
 #include <linux/types.h>
 #include <linux/ioctl.h>
 
-#define VNPU_IOCTL_MAGIC 'VNPU'
+#define VNPU_IOCTL_MAGIC 'V'
 
 #define VNPU_IOCTL_GET_INFO _IOR(VNPU_IOCTL_MAGIC, 0x00, struct vnpu_info)
 #define VNPU_IOCTL_RUN_DOT _IOWR(VNPU_IOCTL_MAGIC, 0x01, struct vnpu_dot_request)
@@ -26,7 +26,7 @@ struct vnpu_info {
 
 struct vnpu_dot_request {
 	__u32 abi_version;
-	__u32_job_id;
+	__u32 job_id;
 	__u32 vector_length;
 	__u32 timeout_ms;
 	__u32 input_a[4];
@@ -50,4 +50,4 @@ struct vnpu_status {
 	__u64 resets;
 };
 
-#endif _VNPU_H
+#endif /* _VNPU_H */
