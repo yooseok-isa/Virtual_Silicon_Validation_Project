@@ -1,6 +1,6 @@
 # PROJECT_STATUS
 
-Last updated: 2026-08-17
+Last updated: 2026-08-18
 
 ## Milestone 0 - Reproducible QEMU Guest Environment
 
@@ -142,26 +142,29 @@ Implement a Linux PCI kernel driver and character-device UAPI that controls the 
 - PCI driver skeleton, probe/remove callbacks, BAR0 mapping, IRQ handler, miscdevice registration, and ioctl dispatch are present in source.
 - Userspace ioctl smoke test source exists at `linux-driver/tests/vnpu-ioctl-smoke.c`.
 - `linux-driver/Makefile` builds both `vnpu-drv.ko` and `tests/vnpu-ioctl-smoke`.
+- Guest `insmod vnpu-drv.ko` has been reported complete by the user.
+- `/dev/vnpu0` creation has been reported complete by the user.
+- `dmesg` and `lspci -k` evidence capture has been reported complete by the user.
+- UAPI header and `docs/uapi.md` mismatch cleanup has been reported complete by the user.
+- `GET_INFO`, `RUN_DOT`, `RESET`, `SET_FAULT`, and `GET_STAT` runtime behavior has been reported working by the user.
+- `VNPU_IOCTL_SET_FAULT` trailing-semicolon bug has been reported fixed by the user.
+- Guest `rmmod`/remove behavior has been reported working by the user.
 
 ### In Progress
-- Linux driver implementation is compileable but not runtime-validated in the guest.
-- Character-device and ioctl paths are implemented as a skeleton, but their behavior has not been verified through `/dev/vnpu0`.
-- IRQ-driven completion, timeout recovery, reset handling, fault injection, and stats paths exist in source but still need runtime validation and cleanup.
-- Userspace ioctl smoke test builds as a guest binary, but has not been executed in the guest.
+- Linux driver implementation is compileable and has initial guest load/device-node/ioctl evidence.
+- IRQ-driven completion, timeout recovery, reset handling, fault injection, stats, and remove paths have initial runtime evidence but still need recorded logs.
+- Userspace ioctl smoke test builds as a guest binary and has been reported working in the guest, but captured output has not been checked into the repository.
 
 ### Not Completed
-- Guest `insmod`/`rmmod` evidence has not been recorded.
-- `/dev/vnpu0` creation has not been verified in the guest.
-- `lspci -k`/`dmesg` evidence for driver probe and remove is not recorded.
-- `GET_INFO`, `RUN_DOT`, `RESET`, `SET_FAULT`, and `GET_STAT` runtime behavior is not tested.
 - Probe-time validation of BAR0 size, MMIO `DEVICE_ID`, MMIO `REVISION`, and `CAPABILITIES` is incomplete.
-- `linux-driver/vnpu-uapi.h` still differs from `docs/uapi.md` in naming and structure fields.
-- Current driver build has warnings; `VNPU_IOCTL_SET_FAULT` still contains a `copy_to_user()` trailing-semicolon bug that makes the ioctl return `-EFAULT`.
 - Driver runtime tests and captured logs are not implemented.
 
 ### Evidence
 - Local build: `make -C linux-driver`
 - Observed build result: Kbuild produced `vnpu-drv.ko`, and the Buildroot userspace compiler produced `tests/vnpu-ioctl-smoke`.
+- User-reported guest evidence: `insmod vnpu-drv.ko`, `/dev/vnpu0` creation, and `dmesg`/`lspci -k` evidence capture are complete.
+- User-reported ioctl evidence: `GET_INFO`, `RUN_DOT`, `RESET`, `SET_FAULT`, and `GET_STAT` completed successfully through `/dev/vnpu0`.
+- User-reported cleanup evidence: `VNPU_IOCTL_SET_FAULT` trailing-semicolon bug is fixed and `rmmod` completes normally.
 
 ### Entry Criteria
 - Record M1 guest enumeration evidence before starting driver probe work.

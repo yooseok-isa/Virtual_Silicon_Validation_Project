@@ -241,7 +241,7 @@ static long vnpu_ioctl(struct file *file, unsigned int cmd, unsigned long arg){
 				return -EFAULT;
 
 			info.abi_version = 1;
-			info.device_id = readl(VNPU_REG_DEVICE_ID);
+			info.device_id = readl(vnpu->base + VNPU_REG_DEVICE_ID);
 			res = 0;
 			
 			if(copy_to_user((void __user *)arg, &info, sizeof(info)))
@@ -306,6 +306,7 @@ static long vnpu_ioctl(struct file *file, unsigned int cmd, unsigned long arg){
 			dot.result = readl(vnpu->base + VNPU_REG_RESULT);
 			dot.driver_status = DRIVER_STATUS_OK;
 			vnpu->completed_num += 1;
+			res = 0;
 			mutex_unlock(&vnpu->mutex);
 			if(copy_to_user((void __user *)arg, &dot, sizeof(dot)))
 				return -EFAULT;

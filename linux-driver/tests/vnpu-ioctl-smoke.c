@@ -21,7 +21,7 @@ int main(void)
 	
 	printf("start VNPU_IOCTL_GET_INFO\n");
     if (ioctl(fd, VNPU_IOCTL_GET_INFO, &info) < 0) {
-        perror("GET_INFO");
+        perror("GET_INFO EEROR: ");
         return 1;
     }
 
@@ -39,7 +39,7 @@ int main(void)
 
 	printf("start VNPU_IOCTL_RUN_DOT\n");
     if (ioctl(fd, VNPU_IOCTL_RUN_DOT, &req) < 0) {
-        perror("RUN_DOT");
+        perror("RUN_DOT ERROR: ");
         return 1;
     }
 
@@ -49,7 +49,7 @@ int main(void)
 
 	printf("start VNPU_IOCTL_GET_STAT\n");
     if (ioctl(fd, VNPU_IOCTL_GET_STAT, &stats) < 0) {
-        perror("GET_STAT");
+        perror("GET_STAT ERROR: ");
         return 1;
     }
 
