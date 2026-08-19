@@ -1,6 +1,8 @@
 #pragma once
 
 #include <cstdint>
+#include <span>
+#include <chrono>
 
 struct DeviceInfo{
 	std::uint32_t abi_version;
@@ -35,11 +37,14 @@ struct DeviceStats {
 class IVnpuDevice {
 public:
 	virtual void vnpu_init() = 0;
-	virtual DeviceInfo vnpu_get_info() = 0;
-	virtual DotProductResult vnpu_run_dot() = 0;
+	virtual DeviceInfo vnpu_get_info() const = 0;
+	virtual DotProductResult vnpu_run_dot(
+			std::span<const std::int8_t> input_a,
+			std::span<const std::int8_t> input_b,
+			std::chrono::miliseconds timeout) = 0;
 	virtual void vnpu_reset() = 0;
 	virtual void vnpu_set_fault(FaultType Ftype) = 0;
-	virtual DeviceStats vnpu_get_stats() = 0;
+	virtual DeviceStats vnpu_get_stats() const = 0;
 
 	virtual ~IVnpuDevice() = default;
 };
