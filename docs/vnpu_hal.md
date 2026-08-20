@@ -212,7 +212,7 @@ Required commands:
 
 ```bash
 vnpuctl info --json
-vnpuctl run-dot --input-a <file-or-list> --input-b <file-or-list> --timeout-ms 100 --json
+vnpuctl run-dot --input <json-file> --json
 vnpuctl inject-fault irq-drop
 vnpuctl inject-fault stuck-busy
 vnpuctl inject-fault corrupt-result
@@ -224,6 +224,25 @@ vnpuctl stats --json
 
 JSON output is the stable interface for pytest. Human-readable output may be
 added, but automated validation must use JSON.
+
+`run-dot` input must be read from a JSON file. This keeps validation vectors
+reusable across manual tests, pytest, and CI.
+
+Required `run-dot` input JSON shape:
+
+```json
+{
+  "input_a": [1, 2, 3, 4, 5, 6, 7, 8],
+  "input_b": [8, 7, 6, 5, 4, 3, 2, 1],
+  "timeout_ms": 100
+}
+```
+
+`input_a` and `input_b` contain signed INT8 values. Revision A input files must
+provide exactly 8 elements per input vector. Revision B may use the same field
+names with 16 elements once Revision B support is implemented. The CLI must
+reject mismatched vector lengths, values outside the signed INT8 range, missing
+fields, and nonpositive timeouts before issuing the HAL request.
 
 Suggested JSON shapes:
 

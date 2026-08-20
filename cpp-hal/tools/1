@@ -10,7 +10,7 @@
 #include <fstream>
 
 #include <nlohmann/json.hpp>
-#include "include/vnpu-hal.hpp"
+#include "include/vnpu-hal"
 
 struct DotInput {
 	std::span<const std::int8_t> input_a;
@@ -51,7 +51,7 @@ static std::string get_option(int argc, char** argv, std::string_view option)
 	throw std::runtime_error(std::string("missing option: ") + std::string(option));
 }
 
-bool has_flag(int argc, char** argv, std::string_view flag){
+bool has_falg(int argc, char** argv, std::string_view flag){
 
 	for(int i = 2; i<argc; i++){
 		if(argv[i] == flag){
@@ -103,7 +103,7 @@ static DotInput parse_run_dot_input_json(const std::string& path)
 	nlohmann::json root;
 	file >> root;
 
-	DotInput input;
+	RunDotInput input;
 	input.input_a = parse_int8_array(root, "input_a");
 	input.input_b = parse_int8_array(root, "input_b");
 
@@ -130,7 +130,9 @@ int main(int argc, char** argv){
 		return 0;
 	}
 
-	const std::string_view command = argv[1];
+	const std:string_view command = argv[1];
+	CliOptions options();
+
 
 	const bool json = has_flag(argc, argv, "--json");
 	LinuxVnpuDevice dev;
@@ -156,7 +158,7 @@ int main(int argc, char** argv){
 
 	if(command == "run-dot"){
 		struct DotProductResult dot;
-		const std::string input_path = get_option(argc, argv, "--input");
+		const std::string input_path = get_option(argc, argv, "--input")
 
 		DotInput input = parse_run_dot_input_json(input_path);
 
@@ -180,27 +182,25 @@ int main(int argc, char** argv){
 	}
 
 	if(command == "inject-fault"){
-		const std::string_view option = argv[2];
+		
+		uint32_t fault_mask;
 
-
-		if(option == "irq-drop"){
-			dev.vnpu_set_fault(FaultType::irq_drop);
-		} else if(option == "stuck-busy"){
-			dev.vnpu_set_fault(FaultType::stuck_busy);
-		} else if(option == "corrupt-result"){
-			dev.vnpu_set_fault(FaultType::corrupt_result);
-		} else if(option == "force-error"){
-			dev.vnpu_set_fault(FaultType::force_error);
-		} else {
-			print_usage(2);
-			return 0;
+		if(argv[2] == "irq-drop"){
+			dev.vnpu_set_fault(FaultType.irq_drop);
+		} else if(argv[2] == "stuck-busy"){
+			dev.vnpu_set_fault(FaultType.stuck_busy);
+		} else if(argv[2] == "corrupt-result"){
+			dev.vnpu_set_fault(FaultType.corrupt_result);
+		} else if(argv[2] == "force-error"){
+			dev.vnpu_set_fault(FaultType.force_error);
 		}
 		
 		std::cout << "set fault mask\n";
 	}
 
 	if(command == "clear-fault"){
-		dev.vnpu_set_fault(FaultType::none);
+		uint32_t fault_mask;
+		dev.vnpu_set_fault(0);
 		std::cout << "clear fault mask\n";
 	}
 
