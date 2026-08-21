@@ -3,7 +3,7 @@
 #include <unistd.h>
 #include <sys/ioctl.h>
 
-#include "../vnpu-uapi.h"
+#include "vnpu_uapi.h"
 
 int main(void)
 {

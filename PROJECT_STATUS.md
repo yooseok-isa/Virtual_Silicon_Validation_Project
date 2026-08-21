@@ -1,6 +1,6 @@
 # PROJECT_STATUS
 
-Last updated: 2026-08-18
+Last updated: 2026-08-21
 
 ## Milestone 0 - Reproducible QEMU Guest Environment
 
@@ -136,13 +136,13 @@ Implement a Linux PCI kernel driver and character-device UAPI that controls the 
 
 ### Completed
 - Out-of-tree kernel module Makefile exists at `linux-driver/Makefile`.
-- Linux PCI driver source exists at `linux-driver/vnpu-drv.c`.
-- UAPI header exists at `linux-driver/vnpu-uapi.h`.
+- Linux PCI driver source exists at `linux-driver/src/vnpu_drv.c`.
+- UAPI header exists at `linux-driver/include/vnpu_uapi.h`.
 - Kbuild integration successfully builds `vnpu-drv.ko` with `make -C linux-driver`.
 - PCI driver skeleton, probe/remove callbacks, BAR0 mapping, IRQ handler, miscdevice registration, and ioctl dispatch are present in source.
 - Userspace ioctl smoke test source exists at `linux-driver/tests/vnpu-ioctl-smoke.c`.
 - `linux-driver/Makefile` builds both `vnpu-drv.ko` and `tests/vnpu-ioctl-smoke`.
-- Guest `insmod vnpu-drv.ko` has been reported complete by the user.
+- Guest `insmod vnpu-drv.ko` was previously reported complete by the user before the source/module rename.
 - `/dev/vnpu0` creation has been reported complete by the user.
 - `dmesg` and `lspci -k` evidence capture has been reported complete by the user.
 - UAPI header and `docs/uapi.md` mismatch cleanup has been reported complete by the user.
@@ -154,18 +154,64 @@ Implement a Linux PCI kernel driver and character-device UAPI that controls the 
 - Linux driver implementation is compileable and has initial guest load/device-node/ioctl evidence.
 - IRQ-driven completion, timeout recovery, reset handling, fault injection, stats, and remove paths have initial runtime evidence but still need recorded logs.
 - Userspace ioctl smoke test builds as a guest binary and has been reported working in the guest, but captured output has not been checked into the repository.
+- Repository layout is being aligned with `CONTEXT.md`; reorganized `vnpu-drv.ko` evidence has not been re-recorded yet.
 
 ### Not Completed
 - Probe-time validation of BAR0 size, MMIO `DEVICE_ID`, MMIO `REVISION`, and `CAPABILITIES` is incomplete.
 - Driver runtime tests and captured logs are not implemented.
+- Guest `insmod`/`rmmod` evidence must be re-recorded for the reorganized `vnpu-drv.ko` artifact.
 
 ### Evidence
 - Local build: `make -C linux-driver`
 - Observed build result: Kbuild produced `vnpu-drv.ko`, and the Buildroot userspace compiler produced `tests/vnpu-ioctl-smoke`.
-- User-reported guest evidence: `insmod vnpu-drv.ko`, `/dev/vnpu0` creation, and `dmesg`/`lspci -k` evidence capture are complete.
+- User-reported guest evidence before module rename: `insmod vnpu-drv.ko`, `/dev/vnpu0` creation, and `dmesg`/`lspci -k` evidence capture were complete.
 - User-reported ioctl evidence: `GET_INFO`, `RUN_DOT`, `RESET`, `SET_FAULT`, and `GET_STAT` completed successfully through `/dev/vnpu0`.
 - User-reported cleanup evidence: `VNPU_IOCTL_SET_FAULT` trailing-semicolon bug is fixed and `rmmod` completes normally.
 
 ### Entry Criteria
 - Record M1 guest enumeration evidence before starting driver probe work.
 - Add at least a minimal M2 MMIO smoke test before relying on the device model for driver debugging.
+
+## Milestone 4 - C++ HAL and Validation CLI
+
+### Goal
+Provide a C++ HAL and `vnpuctl` userspace CLI on top of `/dev/vnpu0` so manual validation and future pytest automation can use stable high-level commands instead of raw ioctl packing.
+
+### Required Work
+- Define the `IVnpuDevice` C++ HAL interface.
+- Implement `LinuxVnpuDevice` using `/dev/vnpu0` ioctl calls.
+- Implement a deterministic `MockVnpuDevice` backend for unit tests.
+- Implement stable `vnpuctl` JSON commands.
+- Add CMake integration for HAL and CLI builds.
+- Add HAL unit tests and CLI validation tests.
+
+### Completed
+- Repository layout has been aligned toward `CONTEXT.md` with `cpp-hal/include/vnpu/`, `cpp-hal/tests/`, `python-tests/`, `guest/`, `ci/helpers/`, `LICENSES/`, and `docs/adr/`.
+- Root `tools/` is now treated as an output directory for the built `vnpuctl` binary.
+- Canonical HAL header exists at `cpp-hal/include/vnpu/vnpu-hal.hpp`.
+- Compatibility wrapper header exists at `cpp-hal/include/vnpu-hal.hpp`.
+- `LinuxVnpuDevice` implementation exists at `cpp-hal/src/vnpu-hal.cpp`.
+- `vnpuctl` source exists at `cpp-hal/src/vnpuctl.cpp`.
+- Direct Makefile build exists at `cpp-hal/Makefile` and emits `cpp-hal/src/vnpu-hal.o`, `cpp-hal/src/vnpuctl.o`, and `tools/vnpuctl`.
+- CMake build definition exists at `cpp-hal/CMakeLists.txt` as an optional build path.
+- Top-level component build entry point exists at `Makefile`.
+- Local `make -C cpp-hal clean all` completed successfully without CMake.
+- Guest execution of `tools/vnpuctl` against `/dev/vnpu0` has been reported complete by the user.
+- Required `vnpuctl` command behavior has been reported complete by the user for `info`, `run-dot`, `stats`, `inject-fault`, `clear-faults`, and `reset`.
+
+### In Progress
+- HAL/CLI implementation is still an MVP and needs recorded JSON output and logs.
+- CMake project definition exists, but CMake execution could not be verified in the current host environment because `cmake` is not installed.
+
+### Not Completed
+- `MockVnpuDevice` backend is not implemented.
+- GoogleTest unit tests are not implemented.
+- pytest integration through `vnpuctl --json` is not implemented.
+- CLI JSON output has not been checked into the repository as guest evidence.
+- Full structured error model is not implemented.
+
+### Evidence
+- Local validation: `make -C cpp-hal clean all` built `cpp-hal/src/vnpu-hal.o`, `cpp-hal/src/vnpuctl.o`, and `tools/vnpuctl`.
+- User-reported guest evidence: `tools/vnpuctl` executed successfully against `/dev/vnpu0`.
+- User-reported command evidence: `info`, `run-dot`, `stats`, `inject-fault`, `clear-faults`, and `reset` worked in the guest.
+- Local validation blocked: `cmake` command is not installed in the current host environment.

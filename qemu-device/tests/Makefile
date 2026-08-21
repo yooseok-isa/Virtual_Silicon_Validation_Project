@@ -5,7 +5,7 @@ LDFLAGS ?=
 BIN_DIR := bin
 SRC_DIR := src
 
-.PHONY: all clean
+.PHONY: all clean help
 
 all: $(BIN_DIR)/vnpu-mmio-smoke
 
@@ -17,3 +17,8 @@ $(BIN_DIR)/vnpu-mmio-smoke: $(SRC_DIR)/vnpu-mmio-smoke.c | $(BIN_DIR)
 
 clean:
 	rm -rf $(BIN_DIR)
+
+help:
+	@echo "Targets:"
+	@echo "  make        Build bin/vnpu-mmio-smoke"
+	@echo "  make clean  Remove qemu-device test binaries"

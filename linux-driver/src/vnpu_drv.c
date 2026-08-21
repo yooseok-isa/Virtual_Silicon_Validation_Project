@@ -14,7 +14,7 @@
 #include <linux/uaccess.h>
 #include <linux/kernel.h>
 
-#include "vnpu-uapi.h"
+#include "vnpu_uapi.h"
 
 
 #define VNPU_VENDOR_ID 0x1B36
@@ -63,6 +63,7 @@ struct vnpu_device {
 	struct miscdevice miscdev;
 
 	u32 device_status;
+	bool error_flag;
 	u32 device_error;
 	u32 result;
 	u64 reset_num;
@@ -84,6 +85,40 @@ static void vnpu_set_input_a(void __iomem *base, u32 value, int offset){
 static void vnpu_set_input_b(void __iomem *base, u32 value, int offset){
 	
 	writel(value, base + VNPU_REG_INPUT_B_BASE+(offset*4));
+}
+
+static long device_error_handler(struct vnpu_device *vnpu){
+
+		switch(vnpu->device_error){
+			case 1:
+				dev_err(vnpu->dev, "invalide vector length\n");
+				vnpu->error_flag = false;
+				return -EINVAL;
+			case 2:
+				dev_err(vnpu->dev, "Device already busy\n");
+				vnpu->error_flag = false;
+				return -EBUSY;
+			case 3:
+				dev_err(vnpu->dev, "Device force error\n");
+				vnpu->error_flag = false;
+				return -EIO;
+			case 4:
+				dev_err(vnpu->dev, "unsupported revision\n");
+				vnpu->error_flag = false;
+				return -EOPNOTSUPP;
+			case 5:
+				dev_err(vnpu->dev, "Internal device-model error\n");
+				vnpu->error_flag = false;
+				return -EIO;
+			case 6:
+				dev_err(vnpu->dev, "Device status is done, read result\n");
+				vnpu->error_flag = false;
+				return 0;
+			default:
+				return 0;
+		}
+
+		return 0;
 }
 
 static int vnpu_hw_reset(struct vnpu_device *vnpu){
@@ -187,6 +222,7 @@ static int vnpu_probe(struct pci_dev *pdev, const struct pci_device_id *id){
 	vnpu->timed_out_num = 0;
 	vnpu->submitted_num = 0;
 	vnpu->completed_num = 0;
+	vnpu->error_flag = false;
 
 	pci_set_drvdata(pdev, vnpu);
 	
@@ -216,6 +252,7 @@ static irqreturn_t vnpu_irq_handler(int irq, void *data){
 		vnpu->device_error = readl(vnpu->base + VNPU_REG_ERROR_CODE);
 		vnpu->device_status = readl(vnpu->base + VNPU_REG_STATUS);
 		vnpu->device_error_num += 1;
+		vnpu->error_flag = true;
 	}
 
 	complete(&vnpu->irq_raised);
@@ -301,6 +338,15 @@ static long vnpu_ioctl(struct file *file, unsigned int cmd, unsigned long arg){
 					return -EFAULT;
 
 				return -ETIMEDOUT;
+			}
+			// error가 났을때 결과값 반환안하고 바로 error status  뱉는 로직이 필요함.
+			if(vnpu->error_flag){
+					mutex_unlock(&vnpu->mutex);
+					res = device_error_handler(vnpu);
+					dot.driver_status = DRIVER_STATUS_DEVICE_ERROR;
+					if(copy_to_user((void __user *)arg, &dot, sizeof(dot)))
+						return -EFAULT;
+					return res;
 			}
 
 			dot.result = readl(vnpu->base + VNPU_REG_RESULT);

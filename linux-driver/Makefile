@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: GPL-2.0
 
 obj-m += vnpu-drv.o
+vnpu-drv-y := src/vnpu_drv.o
+ccflags-y += -I$(src)/include
 
 KDIR ?= $(HOME)/src/buildroot/output/build/linux-6.18.7
 ARCH ?= x86_64
@@ -12,21 +14,32 @@ PWD := $(CURDIR)
 SMOKE_SRC := tests/vnpu-ioctl-smoke.c
 SMOKE_BIN := tests/vnpu-ioctl-smoke
 
-.PHONY: all modules tests clean help check-kdir check-toolchain
+.PHONY: all modules stage-module-artifacts tests clean help check-kdir check-toolchain
 
 all: modules tests
 
 modules: check-kdir check-toolchain
 	$(MAKE) -C $(KDIR) M=$(PWD) ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) modules
+	$(MAKE) -C $(CURDIR) stage-module-artifacts
+
+stage-module-artifacts:
+	@for artifact in vnpu-drv.o vnpu-drv.mod vnpu-drv.mod.c vnpu-drv.mod.o; do \
+		if [ -e "$$artifact" ]; then mv -f "$$artifact" src/; fi; \
+	done
 
 tests: $(SMOKE_BIN)
 
-$(SMOKE_BIN): $(SMOKE_SRC) vnpu-uapi.h
-	$(USER_CC) $(USER_CFLAGS) -o $@ $<
+$(SMOKE_BIN): $(SMOKE_SRC) include/vnpu_uapi.h
+	$(USER_CC) $(USER_CFLAGS) -Iinclude -o $@ $<
 
 clean: check-kdir
 	$(MAKE) -C $(KDIR) M=$(PWD) ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) clean
 	$(RM) $(SMOKE_BIN)
+	$(RM) vnpu-drv.ko vnpu-drv.o vnpu-drv.mod vnpu-drv.mod.c vnpu-drv.mod.o
+	$(RM) .vnpu-drv.ko.cmd .vnpu-drv.o.cmd .vnpu-drv.mod.cmd .vnpu-drv.mod.o.cmd
+	$(RM) src/vnpu-drv.o src/vnpu-drv.mod src/vnpu-drv.mod.c src/vnpu-drv.mod.o
+	$(RM) vnpu_drv.ko vnpu_drv.o vnpu_drv.mod vnpu_drv.mod.c vnpu_drv.mod.o
+	$(RM) .vnpu_drv.ko.cmd .vnpu_drv.o.cmd .vnpu_drv.mod.cmd .vnpu_drv.mod.o.cmd
 
 check-kdir:
 	@test -f "$(KDIR)/Makefile" || { \

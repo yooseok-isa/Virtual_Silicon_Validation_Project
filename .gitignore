@@ -1,1 +1,24 @@
 output/
+
+# Generic build directories
+build/
+
+# C/C++ build outputs
+*.o
+*.a
+*.so
+*.d
+
+# Linux Kbuild module outputs
+*.ko
+*.mod
+*.mod.c
+*.cmd
+Module.symvers
+modules.order
+.tmp_versions/
+
+# Project-built tools
+tools/vnpuctl
+linux-driver/tests/vnpu-ioctl-smoke
+qemu-device/tests/bin/

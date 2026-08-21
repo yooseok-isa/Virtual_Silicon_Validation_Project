@@ -23,7 +23,7 @@ Required deliverables:
 
 The HAL must not expose MMIO register offsets or raw BAR access. Register-level
 behavior remains documented in `docs/register_map.md`; driver userspace ABI
-behavior remains documented in `docs/uapi.md` and `linux-driver/vnpu-uapi.h`.
+behavior remains documented in `docs/uapi.md` and `linux-driver/include/vnpu_uapi.h`.
 
 ## Architecture Position
 
@@ -66,8 +66,9 @@ public:
 };
 ```
 
-The current `cpp-hal/include/vnpu-hal.hpp` is an early stub and should be
-evolved toward this interface before the HAL is treated as complete.
+The canonical C++ HAL header is `cpp-hal/include/vnpu/vnpu-hal.hpp`.
+It should continue evolving toward this interface before the HAL is treated as
+complete.
 
 ## Data Model
 
@@ -309,7 +310,7 @@ Milestone 4 is complete when:
 
 As of this document, `cpp-hal` only contains an initial stub:
 
-- `include/vnpu-hal.hpp` uses free functions rather than `IVnpuDevice`;
+- `include/vnpu/vnpu-hal.hpp` now defines `IVnpuDevice`;
 - `src/vnpu-hal.cpp` has empty function bodies;
 - no Linux backend, mock backend, CLI, or tests are implemented yet.
 
