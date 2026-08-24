@@ -4,6 +4,13 @@
 #include <cstdint>
 #include <span>
 #include <string>
+#include <stdexcept>
+#include <exception>
+
+#define ERR_MISMATCH 0
+#define ERR_VEC_LEN 1
+#define ERR_TIMEOUT_CNT 2
+
 
 struct DeviceInfo {
 	std::uint32_t abi_version;
@@ -17,6 +24,11 @@ struct DotProductResult {
 		DRIVER_OK = 0,
 		DRIVER_TIMEOUT = 1,
 		DRIVER_DEVICE_ERROR = 2,
+		DRIVER_INV_REV,
+		DRIVER_INV_LEN,
+		DRIVER_INV_TIME,
+		DRIVER_INV_MULTIBIT,
+		DRIVER_INV_BIT,
 	};
 
 	std::int32_t result;
@@ -39,6 +51,45 @@ struct DeviceStats {
 	std::uint64_t device_error;
 	std::uint64_t resets;
 };
+
+enum class VnpuErrorType{
+	validation_error,
+	system_error,
+	device_error,
+	driver_error,
+	internal_error,
+};
+
+class VnpuError : public std::runtime_error{
+	public:
+		VnpuError(
+				VnpuErrorType type,
+				std::string message,
+				int errnum = 0,
+				std::uint32_t device_error = 0)
+		: std::runtime_error(message),
+		type_(type),
+		errnum_(errnum),
+		device_error_(device_error){}
+
+	VnpuErrorType type() const {
+		return type_;
+	}
+
+	int errnum() const {
+		return errnum_;
+	}
+
+	std::uint32_t device_error() const {
+		return device_error_;
+	}
+
+	private:
+		VnpuErrorType type_;
+		int errnum_;
+		std::uint32_t device_error_;
+};
+
 
 class IVnpuDevice {
 public:
@@ -78,3 +129,21 @@ private:
 		std::span<const std::int8_t> input,
 		std::uint32_t (&packed)[4]);
 };
+
+inline const char* to_string(VnpuErrorType type) {
+	switch (type) {
+	case VnpuErrorType::validation_error:
+	  return "validation_error";
+	case VnpuErrorType::system_error:
+	  return "system_error";
+	case VnpuErrorType::device_error:
+	  return "device_error";
+	case VnpuErrorType::driver_error:
+	  return "driver_error";
+	case VnpuErrorType::internal_error:
+	  return "internal_error";
+	}
+
+	return "internal_error";
+}
+

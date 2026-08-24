@@ -291,20 +291,23 @@ static long vnpu_ioctl(struct file *file, unsigned int cmd, unsigned long arg){
 			
 			if(copy_from_user(&dot, (void __user *)arg, sizeof(dot)))
 				return -EFAULT;
-
+	
 			if(dot.abi_version != 1){
 				dev_err(vnpu->dev, "invalid revistion version\n");
+				dot.driver_status = DRIVER_STATUS_INV_REV;
 				return -EINVAL;
 			}
 
 			vec_len = readl(vnpu->base + VNPU_REG_VECTOR_LENGTH);
 			if(dot.vector_length != vec_len){
 				dev_err(vnpu->dev, "invalid length\n");
+				dot.driver_status = DRIVER_STATUS_INV_LEN;
 				return -EINVAL;
 			}
 
 			if(dot.timeout_ms == 0 || dot.timeout_ms > 1000){
 				dev_err(vnpu->dev, "invalid timeout ms");
+				dot.driver_status = DRIVER_STATUS_INV_TIME;
 				return -EINVAL;
 			}
 			timeout = msecs_to_jiffies(dot.timeout_ms);
@@ -315,11 +318,20 @@ static long vnpu_ioctl(struct file *file, unsigned int cmd, unsigned long arg){
 			//CLEAR STATUS
 			writel(VNPU_IRQ_ALL, vnpu->base + VNPU_REG_IRQ_STATUS);
 			writel(VNPU_IRQ_ALL, vnpu->base + VNPU_REG_IRQ_ENABLE);
-
-			for(int i=0; i<4; i++){
-				vnpu_set_input_a(vnpu->base, dot.input_a[i], i);
-				vnpu_set_input_b(vnpu->base, dot.input_b[i], i);
+			
+			if(vec_len ==8){
+				for(int i=0; i<2; i++){
+					vnpu_set_input_a(vnpu->base, dot.input_a[i], i);
+					vnpu_set_input_b(vnpu->base, dot.input_b[i], i);
+				}
 			}
+			else {
+				for(int i=0; i<4; i++){
+					vnpu_set_input_a(vnpu->base, dot.input_a[i], i);
+					vnpu_set_input_b(vnpu->base, dot.input_b[i], i);
+				}
+			}
+
 			writel(dot.vector_length, vnpu->base + VNPU_REG_VECTOR_LENGTH);
 			writel(VNPU_CONTROL_START, vnpu->base + VNPU_REG_CONTROL);
 			vnpu->submitted_num += 1;
@@ -368,6 +380,18 @@ static long vnpu_ioctl(struct file *file, unsigned int cmd, unsigned long arg){
 			break;
 		case VNPU_IOCTL_SET_FAULT:
 			struct vnpu_fault_request fault;
+
+			//invalid fault mask - multi bit
+			if(fault.fault_mask & (1 - fault.fault_mask)){
+				dev_err(vnpu->dev, "Invalid fault maks - multi bit\n");
+				return -EINVAL;
+			}
+
+			//invalid fault mask - invalid bit
+			if(fault.fault_mask & ~0x0Fu){
+				dev_err(vnpu->dev, "Invalid fault amsk - invalid bit\n");
+				return -EINVAL;
+			}
 
 			if(copy_from_user(&fault, (void __user *)arg, sizeof(fault)))
 				return -EFAULT;

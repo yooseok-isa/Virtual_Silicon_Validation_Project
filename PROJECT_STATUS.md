@@ -198,20 +198,28 @@ Provide a C++ HAL and `vnpuctl` userspace CLI on top of `/dev/vnpu0` so manual v
 - Local `make -C cpp-hal clean all` completed successfully without CMake.
 - Guest execution of `tools/vnpuctl` against `/dev/vnpu0` has been reported complete by the user.
 - Required `vnpuctl` command behavior has been reported complete by the user for `info`, `run-dot`, `stats`, `inject-fault`, `clear-faults`, and `reset`.
+- `VnpuErrorType`, `VnpuError`, and `to_string()` error-model cleanup has been reported complete by the user.
+- `cpp-hal` compile errors after structured error work have been reported fixed by the user.
+- `vnpuctl` now reports both success and error results in JSON form, as reported by the user.
+- Guest `vnpuctl --json` success/error behavior has been reported verified by the user.
+- `vnpuctl run-dot` input contract is now JSON-file only through `--input <json-file>`.
+- Initial pytest helper/config and JSON-file-based `run-dot` test exist under `python-tests/`.
 
 ### In Progress
-- HAL/CLI implementation is still an MVP and needs recorded JSON output and logs.
+- HAL/CLI JSON output works according to user-reported guest testing, but the exact output logs have not been checked into the repository.
 - CMake project definition exists, but CMake execution could not be verified in the current host environment because `cmake` is not installed.
 
 ### Not Completed
 - `MockVnpuDevice` backend is not implemented.
 - GoogleTest unit tests are not implemented.
-- pytest integration through `vnpuctl --json` is not implemented.
+- pytest integration through `vnpuctl --json` has started, but full command/fault coverage is not implemented.
 - CLI JSON output has not been checked into the repository as guest evidence.
-- Full structured error model is not implemented.
 
 ### Evidence
 - Local validation: `make -C cpp-hal clean all` built `cpp-hal/src/vnpu-hal.o`, `cpp-hal/src/vnpuctl.o`, and `tools/vnpuctl`.
 - User-reported guest evidence: `tools/vnpuctl` executed successfully against `/dev/vnpu0`.
 - User-reported command evidence: `info`, `run-dot`, `stats`, `inject-fault`, `clear-faults`, and `reset` worked in the guest.
+- User-reported JSON evidence: `vnpuctl` emits JSON for both success and error paths.
+- User-reported build evidence: `make`/C++ compile errors from the structured error-model changes have been resolved.
+- Local validation: `make -C cpp-hal` succeeded after changing `run-dot` to JSON-file-only input.
 - Local validation blocked: `cmake` command is not installed in the current host environment.

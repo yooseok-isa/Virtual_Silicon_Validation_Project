@@ -33,7 +33,9 @@ DeviceInfo LinuxVnpuDevice::vnpu_get_info() const
 	struct vnpu_info info = {};
 
 	if (::ioctl(fd_, VNPU_IOCTL_GET_INFO, &info) < 0) {
-		throw std::system_error(errno, std::generic_category(), "ioctl GET_INFO");
+		throw VnpuError(VnpuErrorType::system_error,
+				"unspecified error : get info",
+				errno);
 	}
 
 	return DeviceInfo {
@@ -52,13 +54,20 @@ DotProductResult LinuxVnpuDevice::vnpu_run_dot(
 	struct vnpu_dot_request dot_request = {};
 
 	if (input_a.size() != input_b.size()) {
-		throw std::invalid_argument("input_a and input_b length mismatch");
+		throw VnpuError(VnpuErrorType::validation_error,
+				"input_a and input_b length mismatch");
 	}
 	if (input_a.size() != 8) {
-		throw std::invalid_argument("Revision A requires vector length 8");
+		throw VnpuError(VnpuErrorType::validation_error,
+				"Revision A requires vector length 8");
 	}
-	if (timeout.count() <= 0) {
-		throw std::invalid_argument("timeout must be positive");
+	if (input_b.size() != 8) {
+		throw VnpuError(VnpuErrorType::validation_error,
+				"Revision A requires vector length 8");
+	}
+	if (timeout.count() <= 0 || timeout.count() > 1000) {
+		throw VnpuError(VnpuErrorType::validation_error,
+				"timeout must be positive and must be under 1000");
 	}
 
 	pack_int8_input(input_a, dot_request.input_a);
@@ -68,7 +77,35 @@ DotProductResult LinuxVnpuDevice::vnpu_run_dot(
 	dot_request.timeout_ms = static_cast<__u32>(timeout.count());
 
 	if (::ioctl(fd_, VNPU_IOCTL_RUN_DOT, &dot_request) < 0) {
-		throw std::system_error(errno, std::generic_category(), "ioctl RUN_DOT");
+		if(errno == ETIMEDOUT) {
+			throw VnpuError(VnpuErrorType::device_error,
+					"Device time out",
+					errno);
+		}
+
+		if(errno == EFAULT){
+			throw VnpuError(VnpuErrorType::system_error,
+					"failed to copy struct",
+					errno);
+		}
+		
+		if(errno == EINVAL){
+			if(dot_request.driver_status == DRIVER_STATUS_INV_REV){
+				throw VnpuError(VnpuErrorType::validation_error,
+						"invalid revision version",
+						errno);
+			}
+			if(dot_request.driver_status == DRIVER_STATUS_INV_LEN){
+				throw VnpuError(VnpuErrorType::validation_error,
+						"invalid vector length",
+						errno);
+			}
+			if(dot_request.driver_status == DRIVER_STATUS_INV_TIME){
+				throw VnpuError(VnpuErrorType::validation_error,
+						"invalide timeout count",
+						errno);
+			}
+		}
 	}
 
 	return DotProductResult {
@@ -81,7 +118,9 @@ DotProductResult LinuxVnpuDevice::vnpu_run_dot(
 void LinuxVnpuDevice::vnpu_reset()
 {
 	if (::ioctl(fd_, VNPU_IOCTL_RESET) < 0) {
-		throw std::system_error(errno, std::generic_category(), "ioctl RESET");
+		throw VnpuError(VnpuErrorType::system_error,
+				"unspecified error : reset",
+				errno);
 	}
 }
 
@@ -93,7 +132,17 @@ void LinuxVnpuDevice::vnpu_set_fault(FaultType type)
 	fault.fault_mask = static_cast<std::uint32_t>(type);
 
 	if (::ioctl(fd_, VNPU_IOCTL_SET_FAULT, &fault) < 0) {
-		throw std::system_error(errno, std::generic_category(), "ioctl SET_FAULT");
+		if(errno == EFAULT){
+				throw VnpuError(VnpuErrorType::system_error,
+						"failed to copy struct",
+						errno);
+		}
+	
+		if(errno == EINVAL){
+				throw VnpuError(VnpuErrorType::validation_error,
+						"invalid fault mask: multi bit or invalid bit",
+						errno);
+		}
 	}
 }
 
@@ -102,7 +151,16 @@ DeviceStats LinuxVnpuDevice::vnpu_get_stats() const
 	struct vnpu_status status = {};
 
 	if (::ioctl(fd_, VNPU_IOCTL_GET_STAT, &status) < 0) {
-		throw std::system_error(errno, std::generic_category(), "ioctl GET_STAT");
+		if(errno == EFAULT){
+			throw VnpuError(VnpuErrorType::system_error,
+					"failed to copy struct",
+					errno);
+		}
+		else {
+			throw VnpuError(VnpuErrorType::system_error,
+					"unspecified error",
+					errno);
+		}
 	}
 
 	return DeviceStats {

@@ -23,7 +23,6 @@ static void print_usage()
 		<< "Usage:\n"
 		<< "  vnpuctl info --json\n"
 		<< "  vnpuctl run-dot --input input.json --json\n"
-		<< "  vnpuctl run-dot --input-a 1,2,3,4,5,6,7,8 --input-b 1,1,1,1,1,1,1,1 --timeout-ms 100 --json\n"
 		<< "  vnpuctl inject-fault irq-drop|stuck-busy|corrupt-result|force-error\n"
 		<< "  vnpuctl clear-faults\n"
 		<< "  vnpuctl reset\n"
@@ -208,6 +207,16 @@ static const char* driver_status_to_string(DotProductResult::driver_status statu
 		return "timeout";
 	case DotProductResult::DRIVER_DEVICE_ERROR:
 		return "device_error";
+	case DotProductResult::DRIVER_INV_REV:
+		return "invalid_reivsion";
+	case DotProductResult::DRIVER_INV_LEN:
+		return "invalid_vector_length";
+	case DotProductResult::DRIVER_INV_TIME:
+		return "invalid timeout count";
+	case DotProductResult::DRIVER_INV_MULTIBIT:
+		return "not allow multi bit in fualt mask";
+	case DotProductResult::DRIVER_INV_BIT:
+		return "invalid fault mask";
 	}
 
 	return "unknown";
@@ -241,12 +250,11 @@ int main(int argc, char** argv)
 		}
 
 		const std::string_view command = argv[command_index];
-		const bool json = has_flag(argc, argv, "--json");
 		LinuxVnpuDevice dev(get_option_or(argc, argv, "--device", "/dev/vnpu0"));
 
 		if (command == "info") {
-			const DeviceInfo info = dev.vnpu_get_info();
-			if (json) {
+			try {
+				const DeviceInfo info = dev.vnpu_get_info();
 				std::cout
 					<< "{\n"
 					<< "\t\"abi_version\":" << info.abi_version << ",\n"
@@ -254,47 +262,62 @@ int main(int argc, char** argv)
 					<< "\t\"revision\":" << info.revision << ",\n"
 					<< "\t\"capabilities\":" << info.capabilities << "\n"
 					<< "}\n";
-			} else {
-				std::cout
-					<< "abi_version=" << info.abi_version << "\n"
-					<< "device_id=0x" << std::hex << info.device_id << std::dec << "\n"
-					<< "revision=" << info.revision << "\n"
-					<< "capabilities=" << info.capabilities << "\n";
+			}
+			catch(const VnpuError& e) {
+					std::cout
+						<< "{\n"
+						<< "\"Error\" : true" << ",\n"
+						<< "\"error_type\" : \"" << to_string(e.type()) << "\",\n"
+						<< "\"message\" : \"" << e.what() << "\",\n"
+						<< "\"errno\" :" << e.errnum() << ",\n"
+						<< "\"device_error\" :" << e.device_error() << "\n"
+						<< "}\n";
+			}
+			catch(const std::exception& e){
+					std::cout
+						<< "{\n"
+						<< "\"Error\" : \"true\"" << ",\n"
+						<< "\"error_type\" : \"internal_error\""  << ",\n"
+						<< "\"message\" : \"" << e.what() << "\",\n"
+						<< "\"errno\" : 0" << ",\n"
+						<< "\"device_error\" : 0" << "\n"
+						<< "}\n";
 			}
 			return 0;
 		}
 
 		if (command == "run-dot") {
 			DotInput input;
-			if (has_flag(argc, argv, "--input")) {
-				input = parse_run_dot_input_json(get_option(argc, argv, "--input"));
-			} else {
-				input.input_a = parse_int8_list(get_option(argc, argv, "--input-a"));
-				input.input_b = parse_int8_list(get_option(argc, argv, "--input-b"));
-				const int timeout_ms = std::stoi(get_option(argc, argv, "--timeout-ms"));
-				if (timeout_ms <= 0) {
-					throw std::runtime_error("timeout_ms must be positive");
-				}
-				input.timeout = std::chrono::milliseconds(timeout_ms);
-			}
+			input = parse_run_dot_input_json(get_option(argc, argv, "--input"));
 
-			const DotProductResult dot = dev.vnpu_run_dot(input.input_a, input.input_b, input.timeout);
-			if(dot.device_error != 0){
-				std::cout << "Run Dot device error!\n";
-			}
-
-			if (json) {
+			try {
+				const DotProductResult dot = dev.vnpu_run_dot(input.input_a, input.input_b, input.timeout);
 				std::cout
 					<< "{\n"
-					<< "\"result\":" << dot.result << ",\n"
-					<< "\"driver_status\":\"" << driver_status_to_string(dot.status) << "\",\n"
-					<< "\"device_error\":" << dot.device_error << "\n"
+					<< "\t\"result\":" << dot.result << ",\n"
+					<< "\t\"driver_status\":\"" << driver_status_to_string(dot.status) << "\",\n"
+					<< "\t\"device_error\":" << dot.device_error << "\n"
 					<< "}\n";
-			} else {
-				std::cout
-					<< "result=" << dot.result << "\n"
-					<< "driver_status=" << driver_status_to_string(dot.status) << "\n"
-					<< "device_error=" << dot.device_error << "\n";
+			}
+			catch(const VnpuError& e) {
+					std::cout
+						<< "{\n"
+						<< "\t\"Error\" : true" << ",\n"
+						<< "\t\"error_type\" : \"" << to_string(e.type()) << "\",\n"
+						<< "\t\"message\" : \"" << e.what() << "\",\n"
+						<< "\t\"errno\" :" << e.errnum() << ",\n"
+						<< "\t\"device_error\" :" << e.device_error() << "\n"
+						<< "}\n";
+			}
+			catch(const std::exception& e){
+					std::cout
+						<< "{\n"
+						<< "\t\"Error\" : \"true\"" << ",\n"
+						<< "\t\"error_type\" : \"internal_error\""  << ",\n"
+						<< "\t\"message\" : \"" << e.what() << "\",\n"
+						<< "\t\"errno\" : 0" << ",\n"
+						<< "\t\"device_error\" : 0" << "\n"
+						<< "}\n";
 			}
 			return 0;
 		}
@@ -303,47 +326,132 @@ int main(int argc, char** argv)
 			if (command_index + 1 >= argc) {
 				throw std::runtime_error("missing fault type");
 			}
-			dev.vnpu_set_fault(parse_fault_type(argv[command_index + 1]));
-			std::cout << "fault injected\n";
-			return 0;
-		}
-
-		if (command == "clear-faults") {
-			dev.vnpu_set_fault(FaultType::none);
-			std::cout << "faults cleared\n";
-			return 0;
-		}
-
-		if (command == "reset") {
-			dev.vnpu_reset();
-			std::cout << "device reset\n";
-			return 0;
-		}
-
-		if (command == "stats") {
-			const DeviceStats stats = dev.vnpu_get_stats();
-			if (json) {
-				std::cout
+			try {
+				dev.vnpu_set_fault(parse_fault_type(argv[command_index + 1]));
+				std::cout 
 					<< "{\n"
-					<< "\"submitted\":" << stats.submitted << ",\n"
-					<< "\"completed\":" << stats.completed << ",\n"
-					<< "\"timed_out\":" << stats.timed_out << ",\n"
-					<< "\"device_error\":" << stats.device_error << ",\n"
-					<< "\"resets\":" << stats.resets << "\n"
+					<< "\t\"fault_mask\":" << argv[command_index+1]  << "\n"
 					<< "}\n";
-			} else {
-				std::cout
-					<< "submitted=" << stats.submitted << "\n"
-					<< "completed=" << stats.completed << "\n"
-					<< "timed_out=" << stats.timed_out << "\n"
-					<< "device_error=" << stats.device_error << "\n"
-					<< "resets=" << stats.resets << "\n";
+			}
+			catch(const VnpuError& e) {
+					std::cout
+						<< "{\n"
+						<< "\"Error\" : true" << ",\n"
+						<< "\"error_type\" : \"" << to_string(e.type()) << "\",\n"
+						<< "\"message\" : \"" << e.what() << "\",\n"
+						<< "\"errno\" :" << e.errnum() << ",\n"
+						<< "\"device_error\" :" << e.device_error() << "\n"
+						<< "}\n";
+			}
+			catch(const std::exception& e){
+					std::cout
+						<< "{\n"
+						<< "\"Error\" : \"true\"" << ",\n"
+						<< "\"error_type\" : \"internal_error\""  << ",\n"
+						<< "\"message\" : \"" << e.what() << "\",\n"
+						<< "\"errno\" : 0" << ",\n"
+						<< "\"device_error\" : 0" << "\n"
+						<< "}\n";
 			}
 			return 0;
 		}
 
-		print_usage();
-		return 1;
+		if (command == "clear-faults") {
+			try {
+				dev.vnpu_set_fault(FaultType::none);
+				std::cout 
+					<< "{\n"
+					<< "\t\"fault_mask\":" << 0 << "\n"
+					<< "}\n";
+			}
+			catch(const VnpuError& e) {
+					std::cout
+						<< "{\n"
+						<< "\"Error\" : true" << ",\n"
+						<< "\"error_type\" : \"" << to_string(e.type()) << "\",\n"
+						<< "\"message\" : \"" << e.what() << "\",\n"
+						<< "\"errno\" :" << e.errnum() << ",\n"
+						<< "\"device_error\" :" << e.device_error() << "\n"
+						<< "}\n";
+			}
+			catch(const std::exception& e){
+					std::cout
+						<< "{\n"
+						<< "\"Error\" : \"true\"" << ",\n"
+						<< "\"error_type\" : \"internal_error\""  << ",\n"
+						<< "\"message\" : \"" << e.what() << "\",\n"
+						<< "\"errno\" : 0" << ",\n"
+						<< "\"device_error\" : 0" << "\n"
+						<< "}\n";
+			}
+			return 0;
+		}
+
+		if (command == "reset") {
+			try{
+				dev.vnpu_reset();
+				std::cout 
+					<< "{\n"
+					<< "\t\"device_reset\":" << "success" << "\n"
+					<< "}\n";
+			}
+			catch(const VnpuError& e) {
+					std::cout
+						<< "{\n"
+						<< "\"Error\" : true" << ",\n"
+						<< "\"error_type\" : \"" << to_string(e.type()) << "\",\n"
+						<< "\"message\" : \"" << e.what() << "\",\n"
+						<< "\"errno\" :" << e.errnum() << ",\n"
+						<< "\"device_error\" :" << e.device_error() << "\n"
+						<< "}\n";
+			}
+			catch(const std::exception& e){
+					std::cout
+						<< "{\n"
+						<< "\"Error\" : \"true\"" << ",\n"
+						<< "\"error_type\" : \"internal_error\""  << ",\n"
+						<< "\"message\" : \"" << e.what() << "\",\n"
+						<< "\"errno\" : 0" << ",\n"
+						<< "\"device_error\" : 0" << "\n"
+						<< "}\n";
+			}
+			return 0;
+		}
+
+		if (command == "stats") {
+			try {
+				const DeviceStats stats = dev.vnpu_get_stats();
+				std::cout
+					<< "{\n"
+					<< "\t\"submitted\":" << stats.submitted << ",\n"
+					<< "\t\"completed\":" << stats.completed << ",\n"
+					<< "\t\"timed_out\":" << stats.timed_out << ",\n"
+					<< "\t\"device_error\":" << stats.device_error << ",\n"
+					<< "\t\"resets\":" << stats.resets << "\n"
+					<< "}\n";
+			}
+			catch(const VnpuError& e) {
+					std::cout
+						<< "{\n"
+						<< "\t\"Error\" : true" << ",\n"
+						<< "\t\"error_type\" : \"" << to_string(e.type()) << "\",\n"
+						<< "\t\"message\" : \"" << e.what() << "\",\n"
+						<< "\t\"errno\" :" << e.errnum() << ",\n"
+						<< "\t\"device_error\" :" << e.device_error() << "\n"
+						<< "}\n";
+			}
+			catch(const std::exception& e){
+					std::cout
+						<< "{\n"
+						<< "\t\"Error\" : \"true\"" << ",\n"
+						<< "\t\"error_type\" : \"internal_error\""  << ",\n"
+						<< "\t\"message\" : \"" << e.what() << "\",\n"
+						<< "\t\"errno\" : 0" << ",\n"
+						<< "\t\"device_error\" : 0" << "\n"
+						<< "}\n";
+			}
+			return 0;
+		}
 	} catch (const std::exception& error) {
 		if (has_flag(argc, argv, "--json")) {
 			std::cout

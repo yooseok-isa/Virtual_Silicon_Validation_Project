@@ -627,7 +627,7 @@ Required commands:
 
 ```bash
 vnpuctl info --json
-vnpuctl run-dot --input-a <file-or-list> --input-b <file-or-list> --timeout-ms 100 --json
+vnpuctl run-dot --input <json-file> --json
 vnpuctl inject-fault irq-drop
 vnpuctl inject-fault stuck-busy
 vnpuctl inject-fault corrupt-result
