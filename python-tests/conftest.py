@@ -7,8 +7,8 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[1]
 VNPUCTL = REPO_ROOT / "tools" / "vnpuctl"
 
-@pytest.fixture
-def run_vnpuctl():
+@pytest.fixture 
+def run_vnpuctl():  
   def _run_vnpuctl(*args, check=True):
     proc = subprocess.run(
         [str(VNPUCTL), *args, "--json"],

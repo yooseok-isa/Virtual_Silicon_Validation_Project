@@ -1,7 +1,8 @@
-#!/usr/bin/env bash
-set -euo pipefail
+#!/bin/sh
+set -eu
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SCRIPT_DIR="$(CDPATH= cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 PYTEST_CONFIG="$REPO_ROOT/python-tests/pytest.ini"
 PYTEST_DIR="$REPO_ROOT/python-tests"
 VNPUCTL="$REPO_ROOT/tools/vnpuctl"

@@ -268,9 +268,9 @@ static long vnpu_ioctl(struct file *file, unsigned int cmd, unsigned long arg){
 
 	unsigned long timeout;
 	long remaining;
-	
-	vnpu = container_of(miscdev, struct vnpu_device, miscdev);
 
+	vnpu = container_of(miscdev, struct vnpu_device, miscdev);
+	
 	switch(cmd){
 		case VNPU_IOCTL_GET_INFO:
 			struct vnpu_info info;
@@ -381,8 +381,11 @@ static long vnpu_ioctl(struct file *file, unsigned int cmd, unsigned long arg){
 		case VNPU_IOCTL_SET_FAULT:
 			struct vnpu_fault_request fault;
 
+			if(copy_from_user(&fault, (void __user *)arg, sizeof(fault)))
+				return -EFAULT;
+
 			//invalid fault mask - multi bit
-			if(fault.fault_mask & (1 - fault.fault_mask)){
+			if(fault.fault_mask & (fault.fault_mask - 1)){
 				dev_err(vnpu->dev, "Invalid fault maks - multi bit\n");
 				return -EINVAL;
 			}
@@ -392,10 +395,7 @@ static long vnpu_ioctl(struct file *file, unsigned int cmd, unsigned long arg){
 				dev_err(vnpu->dev, "Invalid fault amsk - invalid bit\n");
 				return -EINVAL;
 			}
-
-			if(copy_from_user(&fault, (void __user *)arg, sizeof(fault)))
-				return -EFAULT;
-			
+				
 			mutex_lock(&vnpu->mutex);
 			
 			fault.fault_mask &= 0xf;

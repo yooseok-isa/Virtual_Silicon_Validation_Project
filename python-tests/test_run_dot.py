@@ -6,7 +6,7 @@ from reference_model import dot_i8
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 INPUT_DIR = REPO_ROOT / "cpp-hal" / "tests" / "inputs"
-RUN_DOT_CASES = sorted(INPUT_DIR.glob("*.json"))
+RUN_DOT_CASES = sorted(INPUT_DIR.glob("input*.json"))
 
 
 def pytest_generate_tests(metafunc):
@@ -19,6 +19,8 @@ def pytest_generate_tests(metafunc):
 
 
 def test_run_dot_from_json_file(run_vnpuctl, input_file):
+    run_vnpuctl("reset", check=False)
+
     with input_file.open() as file:
         input_data = json.load(file)
 
