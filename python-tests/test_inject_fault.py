@@ -24,7 +24,9 @@ def test_inject_irq_drop(run_vnpuctl):
 
     try:
         _, data = run_vnpuctl("run-dot", "--input", str(INPUT_FILE), check=False)
-
+        
+        assert data["command"] == "run-dot"
+        assert data["status"] == "error"
         assert data["error_type"] == "device_error"
         assert data["message"] == "Device time out"
     finally:
@@ -37,7 +39,9 @@ def test_inject_stuck_busy(run_vnpuctl):
 
     try:
         _, data = run_vnpuctl("run-dot", "--input", str(INPUT_FILE), check=False)
-
+        
+        assert data["command"] == "run-dot"
+        assert data["status"] == "error"
         assert data["error_type"] == "device_error"
         assert data["message"] == "Device time out"
     finally:
@@ -54,7 +58,8 @@ def test_inject_corrupt_result(run_vnpuctl):
     try:
         _, data = run_vnpuctl("run-dot", "--input", str(INPUT_FILE))
 
-        assert data["driver_status"] == "ok"
+        assert data["command"] == "run-dot"
+        assert data["status"] == "success"
         # assert data["device_error"] == 0
         assert data["result"] != expected
     finally:
@@ -68,7 +73,8 @@ def test_inject_force_error(run_vnpuctl):
     try:
         _, data = run_vnpuctl("run-dot", "--input", str(INPUT_FILE), check=False)
 
-        assert data["driver_status"] == "device_error"
+        assert data["command"] == "run-dot"
+        assert data["status"] == "error"
         # assert data["device_error"] == 3
     finally:
         reset_device(run_vnpuctl)

@@ -27,7 +27,7 @@ def run_vnpuctl():
             f"stderr={proc.stderr}"
         ) from exc
 
-    if check and proc.returncode != 0:
+    if check and (proc.returncode != 0 or data.get("status") == "error"):
         raise AssertionError(
             f"vnpuctl failed\n"
             f"exit={proc.returncode}\n"

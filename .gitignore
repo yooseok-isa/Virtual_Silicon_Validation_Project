@@ -17,9 +17,11 @@ build/
 Module.symvers
 modules.order
 .tmp_versions/
+compile_commands.json
+
 
 # cache directories
-python-tests/__pycache__
+python-tests/__pycache__/
 .cache/
 # Project-built tools
 tools/vnpuctl

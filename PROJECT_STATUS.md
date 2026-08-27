@@ -1,12 +1,12 @@
 # PROJECT_STATUS
 
-Last updated: 2026-08-26
+Last updated: 2026-08-27
 
 ## Current Position
 
 The project is currently in **Milestone 5 - Revision B and Python Validation**, early/in-progress.
 
-Milestones 0 through 4 have enough implementation to support guest-based end-to-end testing through `vnpuctl`, but they are not all formally closed. The main remaining M4 gaps are `MockVnpuDevice`, GoogleTest unit tests, stable JSON schema documentation/evidence, and CMake verification. M5 has started with pytest functional and fault tests, but Revision B and full regression automation are not implemented yet.
+Milestones 0 through 4 have enough implementation to support guest-based end-to-end testing through `vnpuctl`, but they are not all formally closed. The main remaining M4 gaps are `MockVnpuDevice`, GoogleTest unit tests, JSON schema documentation/evidence, and CMake verification. M5 has started with pytest functional and fault tests, but Revision B and full regression automation are not implemented yet.
 
 ## Milestone 0 - Reproducible QEMU Guest Environment
 
@@ -215,13 +215,16 @@ Provide a C++ HAL and `vnpuctl` userspace CLI on top of `/dev/vnpu0` so manual v
 - `vnpuctl run-dot` input contract is JSON-file-only through `--input <json-file>`.
 - `vnpuctl inject-fault` now emits valid JSON string output for `fault_mask`.
 - `vnpuctl reset --json` now emits valid JSON.
+- `vnpuctl` success and error paths now use common top-level JSON fields: `command` and `status`.
+- Shared error JSON helpers exist in `cpp-hal/src/vnpuctl.cpp`.
+- `clear-faults --json` success output was fixed to avoid invalid JSON from a trailing comma.
 - User reported `vnpuctl` guest execution working for `info`, `run-dot`, `stats`, `inject-fault`, `clear-faults`, and `reset`.
 - User reported success and error outputs are JSON-formatted.
 
 ### In Progress
 
-- CLI JSON output is usable by pytest, but the schema is not yet formally documented and locked.
-- Error JSON is functional, but command outputs still need schema consistency cleanup and tests for all commands.
+- CLI JSON output is now more consistent and usable by pytest, but the schema is not yet formally documented in the repository.
+- Error JSON is functional for the main paths, but command-labeling for pre-command failures such as missing device/open failure still needs a final policy decision.
 - CMake project definition exists, but CMake execution could not be verified on the current host because `cmake` is not installed.
 
 ### Not Completed
@@ -230,11 +233,13 @@ Provide a C++ HAL and `vnpuctl` userspace CLI on top of `/dev/vnpu0` so manual v
 - GoogleTest unit tests are not implemented.
 - HAL API documentation is incomplete.
 - Exact guest CLI JSON output logs are not checked into the repository.
+- Dedicated pytest command-smoke tests for `inject-fault` and `clear-faults` JSON contracts are not fully implemented yet.
 
 ### Evidence
 
 - Local build: `make -C cpp-hal`
 - Observed result: `tools/vnpuctl` build path is valid.
+- Host-side error JSON sanity check: `tools/vnpuctl info --json` returns parseable JSON when `/dev/vnpu0` is unavailable.
 
 ## Milestone 5 - Revision B and Python Validation
 
@@ -260,14 +265,19 @@ Demonstrate reusable validation across hardware revisions using pytest, a Python
 - `test_info.py` validates basic `vnpuctl info` JSON fields.
 - `test_run_dot.py` runs JSON-file-based dot-product checks against `input*.json` files only.
 - `fault.json` exists as a dedicated fault-test input and is no longer included in normal dot-product regression.
+- `stats_input.json` exists as a dedicated stats-test input.
 - `test_inject_fault.py` exists and covers `irq-drop`, `stuck-busy`, `corrupt-result`, and `force-error` through `vnpuctl`.
+- `test_stats.py` exists and validates `reset`, successful `run-dot`, repeated `run-dot`, timeout/error faults, and corrupt-result stats deltas.
 - Fault tests reset the device before and after each fault case to reduce stale device-state leakage.
+- pytest assertions now check common `status` and `command` fields for `info`, `run-dot`, stats, and fault-result paths.
+- `run_vnpuctl` now treats JSON `status == "error"` as a failed command when `check=True`, even if the process exit code is `0`.
 - Guest test runner exists at `scripts/run-test.sh` and is now POSIX `sh` compatible for BusyBox-style guests.
+- Guest full pytest run including `test_stats.py` passed, as reported by the user.
 
 ### In Progress
 
 - M5 has started with end-to-end pytest tests through `vnpuctl`.
-- Fault tests are implemented in the repository, but need a fresh full guest run after the latest fixes.
+- Revision A pytest functional, fault, and stats tests have a fresh guest full-pass result reported by the user.
 - The current pytest path validates the full stack from CLI through HAL, driver, MMIO, IRQ, and QEMU device; failures still need lower-level triage when they occur.
 
 ### Not Completed
@@ -276,6 +286,7 @@ Demonstrate reusable validation across hardware revisions using pytest, a Python
 - `JOB_ID` behavior is not implemented.
 - Randomized seeded differential tests are not implemented.
 - INT8 boundary tests are not implemented.
+- Direct JSON contract tests for `inject-fault` and `clear-faults` command-only operations are not implemented.
 - Device enumeration pytest is not implemented.
 - Driver probe/reload pytest is not implemented.
 - JUnit XML generation and failure artifact collection are not implemented.
@@ -285,7 +296,9 @@ Demonstrate reusable validation across hardware revisions using pytest, a Python
 
 - Local syntax/compile checks:
   - `sh -n scripts/run-test.sh scripts/device_reboot.sh`
+  - `python3 -m py_compile python-tests/conftest.py python-tests/test_info.py python-tests/test_run_dot.py python-tests/test_inject_fault.py python-tests/test_stats.py python-tests/reference_model.py`
   - `python3 -m pytest -c python-tests/pytest.ini python-tests --collect-only -q`
+  - `make -C cpp-hal`
 - Current pytest collection:
   - `test_info.py::test_info`
   - `test_inject_fault.py::test_inject_irq_drop`
@@ -295,8 +308,15 @@ Demonstrate reusable validation across hardware revisions using pytest, a Python
   - `test_run_dot.py::test_run_dot_from_json_file[input0]`
   - `test_run_dot.py::test_run_dot_from_json_file[input1]`
   - `test_run_dot.py::test_run_dot_from_json_file[input2]`
-- Local result: `8 tests collected`.
-- Full pytest execution requires guest Linux with `/dev/vnpu0` available.
+  - `test_stats.py::test_reset_updates_stats`
+  - `test_stats.py::test_run_dot_success_updates_stats`
+  - `test_stats.py::test_multiple_run_dot_successes_update_stats`
+  - `test_stats.py::test_fault_run_dot_updates_stats[force-error-expected_delta0-system_error-Device force error]`
+  - `test_stats.py::test_fault_run_dot_updates_stats[irq-drop-expected_delta1-device_error-Device time out]`
+  - `test_stats.py::test_fault_run_dot_updates_stats[stuck-busy-expected_delta2-device_error-Device time out]`
+  - `test_stats.py::test_corrupt_result_updates_stats`
+- Local result: `15 tests collected`.
+- User-reported guest result: full pytest run passed with `test_stats.py` included.
 
 ## Milestone 6 - CI, Documentation, and Portfolio Completion
 
@@ -341,6 +361,5 @@ Make the project reproducible, reviewable, and suitable for technical interviews
 
 ## Repository Hygiene Notes
 
-- The working tree currently contains generated Python cache files under `python-tests/__pycache__/`, `.cache/`, and `compile_commands.json`.
-- These generated artifacts should not be treated as source or milestone evidence.
-- Some implementation/test files are currently untracked and should be reviewed before committing, including `python-tests/test_inject_fault.py`, `cpp-hal/tests/inputs/fault.json`, and `scripts/device_reboot.sh`.
+- `.gitignore` has been updated to ignore `compile_commands.json` and Python cache output.
+- Generated artifacts such as Python cache files and compiler databases should not be treated as source or milestone evidence.

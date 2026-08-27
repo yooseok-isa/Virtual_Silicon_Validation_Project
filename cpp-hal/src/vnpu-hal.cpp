@@ -106,6 +106,12 @@ DotProductResult LinuxVnpuDevice::vnpu_run_dot(
 						errno);
 			}
 		}
+		
+		if(errno == EIO){
+			throw VnpuError(VnpuErrorType::system_error,
+					"Device force error",
+					errno);
+		}
 	}
 
 	return DotProductResult {

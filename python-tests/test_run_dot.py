@@ -27,6 +27,8 @@ def test_run_dot_from_json_file(run_vnpuctl, input_file):
     proc, data = run_vnpuctl("run-dot", "--input", str(input_file))
 
     assert proc.returncode == 0
+    assert data["status"] == "success"
+    assert data["command"] == "run-dot"
     assert data["result"] == dot_i8(input_data["input_a"], input_data["input_b"])
     assert data["driver_status"] == "ok"
     assert data["device_error"] == 0

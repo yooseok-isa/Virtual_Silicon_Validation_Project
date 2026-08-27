@@ -222,6 +222,34 @@ static const char* driver_status_to_string(DotProductResult::driver_status statu
 	return "unknown";
 }
 
+static void print_error_schema(
+	std::string_view command,
+	std::string_view error_type,
+	std::string_view message,
+	int errnum,
+	std::uint32_t device_error)
+{
+	std::cout
+		<< "{\n"
+		<< "\t\"command\": \"" << command << "\",\n"
+		<< "\t\"status\": \"" << "error" << "\",\n"
+		<< "\t\"error_type\" : \"" << error_type << "\",\n"
+		<< "\t\"message\" : \"" << message << "\",\n"
+		<< "\t\"errno\" :" << errnum << ",\n"
+		<< "\t\"device_error\" :" << device_error << "\n"
+		<< "}\n";
+}
+
+static void print_vnpu_error_schema(std::string_view command, const VnpuError& error)
+{
+	print_error_schema(command, to_string(error.type()), error.what(), error.errnum(), error.device_error());
+}
+
+static void print_internal_error_schema(std::string_view command, const std::exception& error)
+{
+	print_error_schema(command, "internal_error", error.what(), 0, 0);
+}
+
 static FaultType parse_fault_type(std::string_view value)
 {
 	if (value == "irq-drop") {
@@ -266,26 +294,10 @@ int main(int argc, char** argv)
 					<< "}\n";
 			}
 			catch(const VnpuError& e) {
-					std::cout
-						<< "{\n"
-						<< "\t\"command\": \"" << argv[command_index] << "\",\n"
-						<< "\t\"status\": \"" << "error" << "\",\n"
-						<< "\t\"error_type\" : \"" << to_string(e.type()) << "\",\n"
-						<< "\t\"message\" : \"" << e.what() << "\",\n"
-						<< "\t\"errno\" :" << e.errnum() << ",\n"
-						<< "\t\"device_error\" :" << e.device_error() << "\n"
-						<< "}\n";
+				print_vnpu_error_schema(command, e);
 			}
 			catch(const std::exception& e){
-					std::cout
-						<< "{\n"
-						<< "\t\"command\": \"" << argv[command_index] << "\",\n"
-						<< "\t\"status\": \"" << "error" << "\",\n"
-						<< "\t\"error_type\" : \"internal_error\""  << ",\n"
-						<< "\t\"message\" : \"" << e.what() << "\",\n"
-						<< "\t\"errno\" : 0" << ",\n"
-						<< "\t\"device_error\" : 0" << "\n"
-						<< "}\n";
+				print_internal_error_schema(command, e);
 			}
 			return 0;
 		}
@@ -306,26 +318,10 @@ int main(int argc, char** argv)
 					<< "}\n";
 			}
 			catch(const VnpuError& e) {
-					std::cout
-						<< "{\n"
-						<< "\t\"command\": \"" << argv[command_index] << "\",\n"
-						<< "\t\"status\": \"" << "error" << "\",\n"
-						<< "\t\"error_type\" : \"" << to_string(e.type()) << "\",\n"
-						<< "\t\"message\" : \"" << e.what() << "\",\n"
-						<< "\t\"errno\" :" << e.errnum() << ",\n"
-						<< "\t\"device_error\" :" << e.device_error() << "\n"
-						<< "}\n";
+				print_vnpu_error_schema(command, e);
 			}
 			catch(const std::exception& e){
-					std::cout
-						<< "{\n"
-						<< "\t\"command\": \"" << argv[command_index] << "\",\n"
-						<< "\t\"status\": \"" << "error" << "\",\n"
-						<< "\t\"error_type\" : \"internal_error\""  << ",\n"
-						<< "\t\"message\" : \"" << e.what() << "\",\n"
-						<< "\t\"errno\" : 0" << ",\n"
-						<< "\t\"device_error\" : 0" << "\n"
-						<< "}\n";
+				print_internal_error_schema(command, e);
 			}
 			return 0;
 		}
@@ -336,7 +332,7 @@ int main(int argc, char** argv)
 			}
 			try {
 				dev.vnpu_set_fault(parse_fault_type(argv[command_index + 1]));
-				std::cout 
+				std::cout
 					<< "{\n"
 					<< "\t\"command\": \"" << argv[command_index] << "\",\n"
 					<< "\t\"status\": \"" << "success" << "\",\n"
@@ -344,26 +340,10 @@ int main(int argc, char** argv)
 					<< "}\n";
 			}
 			catch(const VnpuError& e) {
-					std::cout
-						<< "{\n"
-						<< "\t\"command\": \"" << argv[command_index] << "\",\n"
-						<< "\t\"status\": \"" << "error" << "\",\n"
-						<< "\t\"error_type\" : \"" << to_string(e.type()) << "\",\n"
-						<< "\t\"message\" : \"" << e.what() << "\",\n"
-						<< "\t\"errno\" :" << e.errnum() << ",\n"
-						<< "\t\"device_error\" :" << e.device_error() << "\n"
-						<< "}\n";
+				print_vnpu_error_schema(command, e);
 			}
 			catch(const std::exception& e){
-					std::cout
-						<< "{\n"
-						<< "\t\"command\": \"" << argv[command_index] << "\",\n"
-						<< "\t\"status\": \"" << "error" << "\",\n"
-						<< "\t\"error_type\" : \"internal_error\""  << ",\n"
-						<< "\t\"message\" : \"" << e.what() << "\",\n"
-						<< "\t\"errno\" : 0" << ",\n"
-						<< "\t\"device_error\" : 0" << "\n"
-						<< "}\n";
+				print_internal_error_schema(command, e);
 			}
 			return 0;
 		}
@@ -371,67 +351,35 @@ int main(int argc, char** argv)
 		if (command == "clear-faults") {
 			try {
 				dev.vnpu_set_fault(FaultType::none);
-				std::cout 
-					<< "{\n"
-					<< "\t\"command\": \"" << argv[command_index] << "\",\n"
-					<< "\t\"status\": \"" << "success" << "\",\n"
-					<< "}\n";
-			}
-			catch(const VnpuError& e) {
 					std::cout
 						<< "{\n"
 						<< "\t\"command\": \"" << argv[command_index] << "\",\n"
-						<< "\t\"status\": \"" << "error" << "\",\n"
-						<< "\t\"error_type\" : \"" << to_string(e.type()) << "\",\n"
-						<< "\t\"message\" : \"" << e.what() << "\",\n"
-						<< "\t\"errno\" :" << e.errnum() << ",\n"
-						<< "\t\"device_error\" :" << e.device_error() << "\n"
+						<< "\t\"status\": \"" << "success" << "\"\n"
 						<< "}\n";
+				}
+			catch(const VnpuError& e) {
+				print_vnpu_error_schema(command, e);
 			}
 			catch(const std::exception& e){
-					std::cout
-						<< "{\n"
-						<< "\t\"command\": \"" << argv[command_index] << "\",\n"
-						<< "\t\"status\": \"" << "error" << "\",\n"
-						<< "\t\"error_type\" : \"internal_error\""  << ",\n"
-						<< "\t\"message\" : \"" << e.what() << "\",\n"
-						<< "\t\"errno\" : 0" << ",\n"
-						<< "\t\"device_error\" : 0" << "\n"
-						<< "}\n";
+				print_internal_error_schema(command, e);
 			}
 			return 0;
 		}
-
+		
 		if (command == "reset") {
 			try{
 				dev.vnpu_reset();
-				std::cout 
+				std::cout
 					<< "{\n"
 					<< "\t\"command\": \"" << argv[command_index] << "\",\n"
 					<< "\t\"status\": \"" << "success" << "\"\n"
 					<< "}\n";
 			}
 			catch(const VnpuError& e) {
-					std::cout
-						<< "{\n"
-						<< "\t\"command\": \"" << argv[command_index] << "\",\n"
-						<< "\t\"status\": \"" << "error" << "\",\n"
-						<< "\t\"error_type\" : \"" << to_string(e.type()) << "\",\n"
-						<< "\t\"message\" : \"" << e.what() << "\",\n"
-						<< "\t\"errno\" :" << e.errnum() << ",\n"
-						<< "\t\"device_error\" :" << e.device_error() << "\n"
-						<< "}\n";
+				print_vnpu_error_schema(command, e);
 			}
 			catch(const std::exception& e){
-					std::cout
-						<< "{\n"
-						<< "\t\"command\": \"" << argv[command_index] << "\",\n"
-						<< "\t\"status\": \"" << "error" << "\",\n"
-						<< "\t\"error_type\" : \"internal_error\""  << ",\n"
-						<< "\t\"message\" : \"" << e.what() << "\",\n"
-						<< "\t\"errno\" : 0" << ",\n"
-						<< "\t\"device_error\" : 0" << "\n"
-						<< "}\n";
+				print_internal_error_schema(command, e);
 			}
 			return 0;
 		}
@@ -451,37 +399,16 @@ int main(int argc, char** argv)
 					<< "}\n";
 			}
 			catch(const VnpuError& e) {
-					std::cout
-						<< "{\n"
-						<< "\t\"command\": \"" << argv[command_index] << "\",\n"
-						<< "\t\"status\": \"" << "error" << "\",\n"
-						<< "\t\"error_type\" : \"" << to_string(e.type()) << "\",\n"
-						<< "\t\"message\" : \"" << e.what() << "\",\n"
-						<< "\t\"errno\" :" << e.errnum() << ",\n"
-						<< "\t\"device_error\" :" << e.device_error() << "\n"
-						<< "}\n";
+				print_vnpu_error_schema(command, e);
 			}
 			catch(const std::exception& e){
-					std::cout
-						<< "{\n"
-						<< "\t\"command\": \"" << argv[command_index] << "\",\n"
-						<< "\t\"status\": \"" << "error" << "\",\n"
-						<< "\t\"error_type\" : \"internal_error\""  << ",\n"
-						<< "\t\"message\" : \"" << e.what() << "\",\n"
-						<< "\t\"errno\" : 0" << ",\n"
-						<< "\t\"device_error\" : 0" << "\n"
-						<< "}\n";
+				print_internal_error_schema(command, e);
 			}
 			return 0;
 		}
 	} catch (const std::exception& error) {
 		if (has_flag(argc, argv, "--json")) {
-			std::cout
-				<< "{"
-				<< "\t\"command\": \"" << "argument parse" << "\",\n"
-				<< "\t\"status\": \"" << "error" << "\",\n"
-				<< "\t\"error\":\"" << error.what() << "\""
-				<< "}\n";
+			print_internal_error_schema("argument parse", error);
 		} else {
 			std::cerr << "error: " << error.what() << "\n";
 		}
