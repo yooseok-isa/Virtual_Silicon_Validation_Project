@@ -1,6 +1,7 @@
 #include <cerrno>
 #include <chrono>
 #include <cstdint>
+#include <cstring>
 #include <fcntl.h>
 #include <span>
 #include <stdexcept>
@@ -179,6 +180,112 @@ DeviceStats LinuxVnpuDevice::vnpu_get_stats() const
 }
 
 void LinuxVnpuDevice::pack_int8_input(
+	std::span<const std::int8_t> input,
+	std::uint32_t (&packed)[4])
+{
+	for (std::uint32_t& word : packed) {
+		word = 0;
+	}
+
+	const std::size_t word_count = (input.size() + 3) / 4;
+	for (std::size_t out = 0; out < word_count; ++out) {
+		const std::size_t in = out * 4;
+		std::uint32_t word = 0;
+
+		for (std::size_t byte = 0; byte < 4 && in + byte < input.size(); ++byte) {
+			word |= static_cast<std::uint32_t>(
+				static_cast<std::uint8_t>(input[in + byte])) << (byte * 8);
+		}
+
+		packed[out] = word;
+	}
+}
+
+
+
+MockVnpuDevice::MockVnpuDevice(std::string path)
+{
+	if(std::strcmp(path.c_str(), "/dev/vnpu0")){
+		throw std::runtime_error("open /dev/vnpu0");
+	}
+}
+
+DeviceInfo MockVnpuDevice::vnpu_get_info() const{
+	
+	return DeviceInfo {
+		.abi_version = 1,
+		.device_id = 0x564E5055,
+		.revision = 0,
+		.capabilities = 0,
+	};
+}
+
+DotProductResult MockVnpuDevice::vnpu_run_dot(
+		std::span<const std::int8_t> input_a,
+		std::span<const std::int8_t> input_b, 
+		std::chrono::milliseconds timeout) {
+
+	struct vnpu_dot_request dot_request = {};
+
+	if (input_a.size() != input_b.size()) {
+		throw VnpuError(VnpuErrorType::validation_error,
+				"input_a and input_b length mismatch");
+	}
+	if (input_a.size() != 8) {
+		throw VnpuError(VnpuErrorType::validation_error,
+				"Revision A requires vector length 8");
+	}
+	if (input_b.size() != 8) {
+		throw VnpuError(VnpuErrorType::validation_error,
+				"Revision A requires vector length 8");
+	}
+	if (timeout.count() <= 0 || timeout.count() > 1000) {
+		throw VnpuError(VnpuErrorType::validation_error,
+				"timeout must be positive and must be under 1000");
+	}
+
+	dot_request.abi_version = 1;
+	dot_request.vector_length = static_cast<__u32>(input_a.size());
+	dot_request.timeout_ms = static_cast<__u32>(timeout.count());
+	
+
+	return DotProductResult {
+		.result = dot_product(input_a, input_b),
+		.device_error = 0,
+		.status = DotProductResult::DRIVER_OK,
+	};
+}
+
+void MockVnpuDevice::vnpu_reset() {}
+
+void MockVnpuDevice::vnpu_set_fault(FaultType type){
+	if(type == FaultType::irq_drop){
+
+	}
+	else if(type == FaultType::stuck_busy){
+
+	}
+	else if(type == FaultType::corrupt_result){
+
+	}
+	else if(type == FaultType::force_error){
+	
+	}
+}
+
+
+int32_t MockVnpuDevice::dot_product(
+		std::span<const std::int8_t> input_a,
+		std::span<const std::int8_t> input_b) {
+	
+	uint32_t result = 0;
+	for(size_t i=0; i < input_a.size(); i++){
+		result += input_a[i] * input_b[i];
+	}
+	return result;
+}
+
+void MockVnpuDevice::pack_int8_input(
 	std::span<const std::int8_t> input,
 	std::uint32_t (&packed)[4])
 {

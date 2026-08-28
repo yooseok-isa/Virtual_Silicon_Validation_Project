@@ -130,6 +130,36 @@ private:
 		std::uint32_t (&packed)[4]);
 };
 
+class MockVnpuDevice : public IVnpuDevice {
+public:
+	explicit MockVnpuDevice(std::string path = "/dev/vnpu0");
+	~MockVnpuDevice() override = default;
+
+	MockVnpuDevice(const LinuxVnpuDevice&) = delete;
+	MockVnpuDevice& operator=(const LinuxVnpuDevice&) = delete;
+
+	DeviceInfo vnpu_get_info() const override;
+	DotProductResult vnpu_run_dot(
+		std::span<const std::int8_t> input_a,
+		std::span<const std::int8_t> input_b,
+		std::chrono::milliseconds timeout) override;
+	void vnpu_reset() override;
+	void vnpu_set_fault(FaultType type) override;
+	DeviceStats vnpu_get_stats() const override;
+
+private:
+	int fd_ = -1;
+
+	static void pack_int8_input(
+		std::span<const std::int8_t> input,
+		std::uint32_t (&packed)[4]);
+
+	static int32_t dot_product(
+			std::span<const std::int8_t> input_a, 
+			std::span<const std::int8_t> input_b);
+
+};
+
 inline const char* to_string(VnpuErrorType type) {
 	switch (type) {
 	case VnpuErrorType::validation_error:
