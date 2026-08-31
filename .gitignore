@@ -12,6 +12,7 @@ build/
 # context.md file
 CONTEXT.md
 CONTEXT_KO.md
+PROJECT_STATUS.md
 
 # Linux Kbuild module outputs
 *.ko
