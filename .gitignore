@@ -30,5 +30,7 @@ python-tests/__pycache__/
 .cache/
 # Project-built tools
 tools/vnpuctl
+tools/mock-gtest
+cpp-hal/tests/mock-gtest
 linux-driver/tests/vnpu-ioctl-smoke
 qemu-device/tests/bin/

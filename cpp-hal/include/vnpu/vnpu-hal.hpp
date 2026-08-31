@@ -135,7 +135,7 @@ public:
 	explicit MockVnpuDevice(std::string path = "/dev/vnpu0");
 	~MockVnpuDevice() override = default;
 
-	MockVnpuDevice(const LinuxVnpuDevice&) = delete;
+	MockVnpuDevice(const MockVnpuDevice&) = delete;
 	MockVnpuDevice& operator=(const LinuxVnpuDevice&) = delete;
 
 	DeviceInfo vnpu_get_info() const override;
@@ -149,10 +149,12 @@ public:
 
 private:
 	int fd_ = -1;
+	uint32_t fault_mask_ = 0;
+	DeviceStats stats_{};
 
-	static void pack_int8_input(
-		std::span<const std::int8_t> input,
-		std::uint32_t (&packed)[4]);
+	// static void pack_int8_input(
+	// 	std::span<const std::int8_t> input,
+	// 	std::uint32_t (&packed)[4]);
 
 	static int32_t dot_product(
 			std::span<const std::int8_t> input_a, 

@@ -201,8 +201,6 @@ void LinuxVnpuDevice::pack_int8_input(
 	}
 }
 
-
-
 MockVnpuDevice::MockVnpuDevice(std::string path)
 {
 	if(std::strcmp(path.c_str(), "/dev/vnpu0")){
@@ -248,7 +246,38 @@ DotProductResult MockVnpuDevice::vnpu_run_dot(
 	dot_request.vector_length = static_cast<__u32>(input_a.size());
 	dot_request.timeout_ms = static_cast<__u32>(timeout.count());
 	
+	// submitted++;
+	// completed++;
+	
+	if(fault_mask_ == static_cast<std::uint32_t>(FaultType::corrupt_result)){
+		stats_.submitted++;
+		stats_.completed++;
+		return DotProductResult {
+			.result = dot_product(input_a, input_b) ^ 0b01,
+			.device_error = 0,
+			.status = DotProductResult::DRIVER_OK,
+		};
+	}
 
+	if(fault_mask_ == static_cast<std::uint32_t>(FaultType::stuck_busy) || 
+			fault_mask_ == static_cast<std::uint32_t>(FaultType::irq_drop)){
+		stats_.submitted++;
+		stats_.timed_out++;
+		throw VnpuError(VnpuErrorType::device_error, "timout");
+	}
+
+	if(fault_mask_ == static_cast<std::uint32_t>(FaultType::force_error)){
+		stats_.submitted++;
+		stats_.device_error++;
+		return DotProductResult {
+			.result = dot_product(input_a, input_b),
+			.device_error = 0,
+			.status = DotProductResult::DRIVER_DEVICE_ERROR,
+		};
+	}
+
+	stats_.submitted++;
+	stats_.completed++;
 	return DotProductResult {
 		.result = dot_product(input_a, input_b),
 		.device_error = 0,
@@ -256,21 +285,24 @@ DotProductResult MockVnpuDevice::vnpu_run_dot(
 	};
 }
 
-void MockVnpuDevice::vnpu_reset() {}
+void MockVnpuDevice::vnpu_reset() { 
+	stats_.resets++; 
+	fault_mask_ = static_cast<std::uint32_t>(FaultType::none);
+}
 
 void MockVnpuDevice::vnpu_set_fault(FaultType type){
-	if(type == FaultType::irq_drop){
+		fault_mask_ = static_cast<std::uint32_t>(type);
+}
 
-	}
-	else if(type == FaultType::stuck_busy){
-
-	}
-	else if(type == FaultType::corrupt_result){
-
-	}
-	else if(type == FaultType::force_error){
+DeviceStats MockVnpuDevice::vnpu_get_stats() const {
 	
-	}
+	return DeviceStats{
+		.submitted = MockVnpuDevice::stats_.submitted,
+		.completed = MockVnpuDevice::stats_.completed,
+		.timed_out = MockVnpuDevice::stats_.timed_out,
+		.device_error = MockVnpuDevice::stats_.device_error,
+		.resets = MockVnpuDevice::stats_.resets,
+	};
 }
 
 
@@ -285,24 +317,24 @@ int32_t MockVnpuDevice::dot_product(
 	return result;
 }
 
-void MockVnpuDevice::pack_int8_input(
-	std::span<const std::int8_t> input,
-	std::uint32_t (&packed)[4])
-{
-	for (std::uint32_t& word : packed) {
-		word = 0;
-	}
-
-	const std::size_t word_count = (input.size() + 3) / 4;
-	for (std::size_t out = 0; out < word_count; ++out) {
-		const std::size_t in = out * 4;
-		std::uint32_t word = 0;
-
-		for (std::size_t byte = 0; byte < 4 && in + byte < input.size(); ++byte) {
-			word |= static_cast<std::uint32_t>(
-				static_cast<std::uint8_t>(input[in + byte])) << (byte * 8);
-		}
-
-		packed[out] = word;
-	}
-}
+// void MockVnpuDevice::pack_int8_input(
+// 	std::span<const std::int8_t> input,
+// 	std::uint32_t (&packed)[4])
+// {
+// 	for (std::uint32_t& word : packed) {
+// 		word = 0;
+// 	}
+//
+// 	const std::size_t word_count = (input.size() + 3) / 4;
+// 	for (std::size_t out = 0; out < word_count; ++out) {
+// 		const std::size_t in = out * 4;
+// 		std::uint32_t word = 0;
+//
+// 		for (std::size_t byte = 0; byte < 4 && in + byte < input.size(); ++byte) {
+// 			word |= static_cast<std::uint32_t>(
+// 				static_cast<std::uint8_t>(input[in + byte])) << (byte * 8);
+// 		}
+//
+// 		packed[out] = word;
+// 	}
+// }
