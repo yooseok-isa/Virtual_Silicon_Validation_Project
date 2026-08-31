@@ -9,6 +9,10 @@ build/
 *.so
 *.d
 
+# context.md file
+CONTEXT.md
+CONTEXT_KO.md
+
 # Linux Kbuild module outputs
 *.ko
 *.mod
