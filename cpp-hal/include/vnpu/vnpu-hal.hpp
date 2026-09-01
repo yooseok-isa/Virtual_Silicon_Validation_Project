@@ -136,7 +136,7 @@ public:
 	~MockVnpuDevice() override = default;
 
 	MockVnpuDevice(const MockVnpuDevice&) = delete;
-	MockVnpuDevice& operator=(const LinuxVnpuDevice&) = delete;
+	MockVnpuDevice& operator=(const MockVnpuDevice&) = delete;
 
 	DeviceInfo vnpu_get_info() const override;
 	DotProductResult vnpu_run_dot(

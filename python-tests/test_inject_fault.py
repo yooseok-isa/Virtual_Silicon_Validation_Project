@@ -17,6 +17,20 @@ def load_input():
 def reset_device(run_vnpuctl):
     run_vnpuctl("reset", check=False)
 
+def test_inject_fault_succes_json_contract(run_vnpuctl):
+    _, data = run_vnpuctl("inject-fault", "irq-drop")
+
+    assert data["command"] == "inject-fault"
+    assert data["status"] == "success"
+    assert data["set_fault"] == "irq-drop"
+
+
+def test_clear_fault_succes_json_contract(run_vnpuctl):
+    run_vnpuctl("inject-fault", "corrupt-result")
+    _, data = run_vnpuctl("clear-faults")
+
+    assert data["command"] == "clear-faults"
+    assert data["status"] == "success"
 
 def test_inject_irq_drop(run_vnpuctl):
     reset_device(run_vnpuctl)

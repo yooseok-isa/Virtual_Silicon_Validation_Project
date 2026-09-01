@@ -223,8 +223,6 @@ DotProductResult MockVnpuDevice::vnpu_run_dot(
 		std::span<const std::int8_t> input_b, 
 		std::chrono::milliseconds timeout) {
 
-	struct vnpu_dot_request dot_request = {};
-
 	if (input_a.size() != input_b.size()) {
 		throw VnpuError(VnpuErrorType::validation_error,
 				"input_a and input_b length mismatch");
@@ -242,10 +240,6 @@ DotProductResult MockVnpuDevice::vnpu_run_dot(
 				"timeout must be positive and must be under 1000");
 	}
 
-	dot_request.abi_version = 1;
-	dot_request.vector_length = static_cast<__u32>(input_a.size());
-	dot_request.timeout_ms = static_cast<__u32>(timeout.count());
-	
 	// submitted++;
 	// completed++;
 	
@@ -263,17 +257,13 @@ DotProductResult MockVnpuDevice::vnpu_run_dot(
 			fault_mask_ == static_cast<std::uint32_t>(FaultType::irq_drop)){
 		stats_.submitted++;
 		stats_.timed_out++;
-		throw VnpuError(VnpuErrorType::device_error, "timout");
+		throw VnpuError(VnpuErrorType::device_error, "timeout");
 	}
 
 	if(fault_mask_ == static_cast<std::uint32_t>(FaultType::force_error)){
 		stats_.submitted++;
 		stats_.device_error++;
-		return DotProductResult {
-			.result = dot_product(input_a, input_b),
-			.device_error = 0,
-			.status = DotProductResult::DRIVER_DEVICE_ERROR,
-		};
+		throw VnpuError(VnpuErrorType::device_error, "force error");
 	}
 
 	stats_.submitted++;
@@ -310,7 +300,7 @@ int32_t MockVnpuDevice::dot_product(
 		std::span<const std::int8_t> input_a,
 		std::span<const std::int8_t> input_b) {
 	
-	uint32_t result = 0;
+	std::int32_t result = 0;
 	for(size_t i=0; i < input_a.size(); i++){
 		result += input_a[i] * input_b[i];
 	}
