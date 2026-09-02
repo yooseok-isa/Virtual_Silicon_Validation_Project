@@ -304,7 +304,7 @@ static long vnpu_ioctl(struct file *file, unsigned int cmd, unsigned long arg){
 				dot.driver_status = DRIVER_STATUS_INV_LEN;
 				return -EINVAL;
 			}
-
+			//revision b에서 255 ~ 1000 사이로 수정
 			if(dot.timeout_ms == 0 || dot.timeout_ms > 1000){
 				dev_err(vnpu->dev, "invalid timeout ms");
 				dot.driver_status = DRIVER_STATUS_INV_TIME;

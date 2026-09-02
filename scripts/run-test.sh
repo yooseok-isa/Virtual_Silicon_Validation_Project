@@ -6,6 +6,17 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 PYTEST_CONFIG="$REPO_ROOT/python-tests/pytest.ini"
 PYTEST_DIR="$REPO_ROOT/python-tests"
 VNPUCTL="$REPO_ROOT/tools/vnpuctl"
+ARTIFACT_DIR="${VNPU_TEST_ARTIFACT_DIR:-$REPO_ROOT/artifacts/pytest}"
+JUNIT_XML="${VNPU_JUNIT_XML:-$ARTIFACT_DIR/vnpu-revision-a.xml}"
+JUNIT_ARG="--junitxml=$JUNIT_XML"
+
+for arg in "$@"; do
+    case "$arg" in
+        --junitxml|--junitxml=*)
+            JUNIT_ARG=""
+            ;;
+    esac
+done
 
 if ! command -v pytest >/dev/null 2>&1; then
     echo "error: pytest not found in PATH" >&2
@@ -26,4 +37,10 @@ if [ ! -e /dev/vnpu0 ]; then
 fi
 
 cd "$REPO_ROOT"
+if [ -n "$JUNIT_ARG" ]; then
+    mkdir -p "$(dirname "$JUNIT_XML")"
+    echo "info: writing JUnit XML to $JUNIT_XML" >&2
+    exec pytest -c "$PYTEST_CONFIG" "$PYTEST_DIR" "$JUNIT_ARG" "$@"
+fi
+
 exec pytest -c "$PYTEST_CONFIG" "$PYTEST_DIR" "$@"

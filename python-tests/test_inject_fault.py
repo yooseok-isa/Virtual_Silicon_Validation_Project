@@ -1,11 +1,11 @@
 from pathlib import Path
 import json
+import pytest
 
 from reference_model import dot_i8
 
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-INPUT_DIR = REPO_ROOT / "cpp-hal" / "tests" / "inputs"
+INPUT_DIR = Path(__file__).resolve().parent / "inputs"
 INPUT_FILE = INPUT_DIR / "fault.json"
 
 
@@ -17,6 +17,7 @@ def load_input():
 def reset_device(run_vnpuctl):
     run_vnpuctl("reset", check=False)
 
+@pytest.mark.basic
 def test_inject_fault_succes_json_contract(run_vnpuctl):
     _, data = run_vnpuctl("inject-fault", "irq-drop")
 
@@ -25,6 +26,7 @@ def test_inject_fault_succes_json_contract(run_vnpuctl):
     assert data["set_fault"] == "irq-drop"
 
 
+@pytest.mark.basic
 def test_clear_fault_succes_json_contract(run_vnpuctl):
     run_vnpuctl("inject-fault", "corrupt-result")
     _, data = run_vnpuctl("clear-faults")
@@ -32,6 +34,7 @@ def test_clear_fault_succes_json_contract(run_vnpuctl):
     assert data["command"] == "clear-faults"
     assert data["status"] == "success"
 
+@pytest.mark.basic
 def test_inject_irq_drop(run_vnpuctl):
     reset_device(run_vnpuctl)
     run_vnpuctl("inject-fault", "irq-drop")
@@ -47,6 +50,7 @@ def test_inject_irq_drop(run_vnpuctl):
         reset_device(run_vnpuctl)
 
 
+@pytest.mark.basic
 def test_inject_stuck_busy(run_vnpuctl):
     reset_device(run_vnpuctl)
     run_vnpuctl("inject-fault", "stuck-busy")
@@ -62,6 +66,7 @@ def test_inject_stuck_busy(run_vnpuctl):
         reset_device(run_vnpuctl)
 
 
+@pytest.mark.basic
 def test_inject_corrupt_result(run_vnpuctl):
     reset_device(run_vnpuctl)
     input_data = load_input()
@@ -80,6 +85,7 @@ def test_inject_corrupt_result(run_vnpuctl):
         reset_device(run_vnpuctl)
 
 
+@pytest.mark.basic
 def test_inject_force_error(run_vnpuctl):
     reset_device(run_vnpuctl)
     run_vnpuctl("inject-fault", "force-error")

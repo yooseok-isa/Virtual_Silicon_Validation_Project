@@ -23,10 +23,11 @@ Module.symvers
 modules.order
 .tmp_versions/
 compile_commands.json
-
+artifacts/
 
 # cache directories
 python-tests/__pycache__/
+python-tests/inputs/
 .cache/
 # Project-built tools
 tools/vnpuctl

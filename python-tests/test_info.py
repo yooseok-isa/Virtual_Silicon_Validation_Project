@@ -1,3 +1,7 @@
+import pytest
+
+
+@pytest.mark.basic
 def test_info(run_vnpuctl):
     proc, data = run_vnpuctl("info")
 

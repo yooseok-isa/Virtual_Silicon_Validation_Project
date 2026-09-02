@@ -7,8 +7,7 @@ import pytest
 from reference_model import dot_i8
 
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-INPUT_DIR = REPO_ROOT / "cpp-hal" / "tests" / "inputs"
+INPUT_DIR = Path(__file__).resolve().parent / "inputs"
 INPUT_FILE = INPUT_DIR / "stats_input.json"
 STAT_KEYS = ("submitted", "completed", "timed_out", "device_error", "resets")
 
@@ -65,7 +64,7 @@ def assert_successful_run_dot(data):
     assert data["driver_status"] == "ok"
     assert data["device_error"] == 0
 
-
+@pytest.mark.basic
 def test_reset_updates_stats(run_vnpuctl):
     _, data = run_with_stats_delta(
         run_vnpuctl,
@@ -77,6 +76,7 @@ def test_reset_updates_stats(run_vnpuctl):
     assert data["status"] == "success"
 
 
+@pytest.mark.basic
 def test_run_dot_success_updates_stats(run_vnpuctl):
     run_vnpuctl("reset", check=False)
 
@@ -92,12 +92,13 @@ def test_run_dot_success_updates_stats(run_vnpuctl):
     assert_successful_run_dot(data)
 
 
+@pytest.mark.basic
 def test_multiple_run_dot_successes_update_stats(run_vnpuctl):
     run_vnpuctl("reset", check=False)
 
     with expect_stats_delta(run_vnpuctl, submitted=3, completed=3):
         for _ in range(3):
-            _, data = run_vnpuctl("run-dot", "--input", str(INPUT_FILE))
+            _, data = run_vnpuctl("run-dot", "--input", str(INPUT_FILE), check=False)
             assert_successful_run_dot(data)
 
 
@@ -124,6 +125,7 @@ def test_multiple_run_dot_successes_update_stats(run_vnpuctl):
         ),
     ],
 )
+@pytest.mark.basic
 def test_fault_run_dot_updates_stats(
     run_vnpuctl,
     fault,
@@ -152,6 +154,7 @@ def test_fault_run_dot_updates_stats(
         run_vnpuctl("reset", check=False)
 
 
+@pytest.mark.basic
 def test_corrupt_result_updates_stats(run_vnpuctl):
     input_data = load_input()
     expected = dot_i8(input_data["input_a"], input_data["input_b"])
