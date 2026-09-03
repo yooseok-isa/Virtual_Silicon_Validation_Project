@@ -17,13 +17,13 @@ This document defines the planned MMIO register contract between the QEMU virtua
 
 These IDs are for a local virtual portfolio project. They are not official hardware vendor allocations.
 
-## Register Summary
+## Register map Summary (BAR0)
 
 | Offset | Register | Access | Reset Value | Description |
 |---:|---|---|---:|---|
 | `0x000` | `DEVICE_ID` | RO | `0x564E5055` | ASCII-like `VNPU` signature |
 | `0x004` | `REVISION` | RO | revision-dependent | `1` for revision A, `2` for revision B |
-| `0x008` | `CAPABILITIES` | RO | `0` | Reserved feature bitmap |
+| `0x008` | `CAPABILITIES` | RO | revision-dependent | Feature bitmap; Revision A reads `0`, Revision B advertises supported features |
 | `0x00C` | `CONTROL` | WO/W1S | `0` | Start/reset command register |
 | `0x010` | `STATUS` | RO | `STATUS_IDLE` | Device state |
 | `0x014` | `IRQ_STATUS` | RW1C | `0` | Pending interrupt bits |
@@ -66,15 +66,32 @@ Unsupported revision values must cause the driver probe path to fail clearly.
 Offset: `0x008`  
 Access: read-only
 
+`CAPABILITIES` is a read-only feature bitmap. Software must first validate the
+`REVISION` register, then use `CAPABILITIES` to verify revision-specific
+features.
+
 | Bit | Name | Meaning |
 |---:|---|---|
-| 0 | Reserved | Reserved for future feature discovery |
-| 1 | Reserved | Reserved for future feature discovery |
-| 2 | Reserved | Reserved for future feature discovery |
-| 3 | Reserved | Reserved for future feature discovery |
-| 4 | Reserved | Reserved for future feature discovery |
+| 0 | `VNPU_CAP_DOT_I8` | Signed INT8 dot-product command is implemented |
+| 1 | `VNPU_CAP_VECTOR_LEN_8` | `VECTOR_LENGTH == 8` is accepted |
+| 2 | `VNPU_CAP_VECTOR_LEN_16` | `VECTOR_LENGTH == 16` is accepted |
+| 3 | `VNPU_CAP_JOB_ID` | `JOB_ID` is latched for submitted operations |
+| 4 | `VNPU_CAP_FAULT_INJECTION` | `FAULT_CONTROL` fault injection is implemented |
+| 5 | `VNPU_CAP_COMPLETION_IRQ` | `IRQ_COMPLETION` is implemented |
+| 6 | `VNPU_CAP_ERROR_IRQ` | `IRQ_ERROR` is implemented |
+| `31:7` | Reserved | Must read as `0` |
 
-The current MVP reserves this register. Reads return `0`, and software must not infer support for dot-product, fault injection, job ID, vector-length, or separate error-IRQ behavior from this register yet.
+Expected values:
+
+| Revision | Expected `CAPABILITIES` | Meaning |
+|---|---:|---|
+| A | `0x00000000` | Legacy Revision A behavior; features are implied by `REVISION == 1` |
+| B | `0x0000007D` | Dot INT8, vector length 16, `JOB_ID`, fault injection, completion IRQ, and error IRQ |
+
+Revision A keeps this register at `0` to preserve the current Revision A
+contract. Revision B must set the documented feature bits. Revision B must not
+set `VNPU_CAP_VECTOR_LEN_8` unless backward-compatible length-8 operation is
+explicitly added to the Revision B contract.
 
 ## Control
 
@@ -137,7 +154,6 @@ Access: read-only
 | 3 | `VNPU_ERR_FORCED` | Fault injection forced an error |
 | 4 | `VNPU_ERR_UNSUPPORTED_REVISION` | Unsupported revision |
 | 5 | `VNPU_ERR_INTERNAL` | Internal device-model error |
-| 6 | `VNPU_ERR_DONE` | Device status is done, read result.|
 
 ## Job ID
 
@@ -251,7 +267,8 @@ The Linux driver must:
 
 - verify `DEVICE_ID`;
 - reject unsupported `REVISION`;
-- tolerate `CAPABILITIES == 0` during probe;
+- tolerate `CAPABILITIES == 0` for Revision A during probe;
+- require the documented Revision B capability bits when `REVISION == 2`;
 - validate `VECTOR_LENGTH` before starting an operation;
 - enable IRQs before writing `CONTROL_START`;
 - wait with a bounded timeout;

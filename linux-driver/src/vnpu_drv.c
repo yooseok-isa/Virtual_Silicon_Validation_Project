@@ -62,6 +62,8 @@ struct vnpu_device {
 
 	struct miscdevice miscdev;
 
+	u64 job_id; //new field
+
 	u32 device_status;
 	bool error_flag;
 	u32 device_error;
@@ -110,12 +112,10 @@ static long device_error_handler(struct vnpu_device *vnpu){
 				dev_err(vnpu->dev, "Internal device-model error\n");
 				vnpu->error_flag = false;
 				return -EIO;
-			case 6:
-				dev_err(vnpu->dev, "Device status is done, read result\n");
-				vnpu->error_flag = false;
-				return 0;
 			default:
-				return 0;
+				dev_err(vnpu->dev, "unexpected error number");
+				vnpu->error_flag = false;
+				return -EIO;
 		}
 
 		return 0;
@@ -223,6 +223,7 @@ static int vnpu_probe(struct pci_dev *pdev, const struct pci_device_id *id){
 	vnpu->submitted_num = 0;
 	vnpu->completed_num = 0;
 	vnpu->error_flag = false;
+	vnpu->job_id = 0;
 
 	pci_set_drvdata(pdev, vnpu);
 	
@@ -298,8 +299,8 @@ static long vnpu_ioctl(struct file *file, unsigned int cmd, unsigned long arg){
 				return -EINVAL;
 			}
 
-			vec_len = readl(vnpu->base + VNPU_REG_VECTOR_LENGTH);
-			if(dot.vector_length != vec_len){
+			/* vec_len = readl(vnpu->base + VNPU_REG_VECTOR_LENGTH); */
+			if(!(dot.vector_length == 8 || dot.vector_length == 16)){
 				dev_err(vnpu->dev, "invalid length\n");
 				dot.driver_status = DRIVER_STATUS_INV_LEN;
 				return -EINVAL;
@@ -319,17 +320,23 @@ static long vnpu_ioctl(struct file *file, unsigned int cmd, unsigned long arg){
 			writel(VNPU_IRQ_ALL, vnpu->base + VNPU_REG_IRQ_STATUS);
 			writel(VNPU_IRQ_ALL, vnpu->base + VNPU_REG_IRQ_ENABLE);
 			
-			if(vec_len ==8){
+			if(vec_len == 8){
 				for(int i=0; i<2; i++){
 					vnpu_set_input_a(vnpu->base, dot.input_a[i], i);
 					vnpu_set_input_b(vnpu->base, dot.input_b[i], i);
 				}
 			}
-			else {
+			else if(vec_len == 16){
 				for(int i=0; i<4; i++){
 					vnpu_set_input_a(vnpu->base, dot.input_a[i], i);
 					vnpu_set_input_b(vnpu->base, dot.input_b[i], i);
 				}
+			}
+			else {
+				//invalid length
+				dev_err(vnpu->dev, "invalid length");
+				dot.driver_status = DRIVER_STATUS_INV_LEN;
+				return -EINVAL;
 			}
 
 			writel(dot.vector_length, vnpu->base + VNPU_REG_VECTOR_LENGTH);
@@ -348,7 +355,6 @@ static long vnpu_ioctl(struct file *file, unsigned int cmd, unsigned long arg){
 				
 				if(copy_to_user((void __user *)arg, &dot, sizeof(dot)))
 					return -EFAULT;
-
 				return -ETIMEDOUT;
 			}
 			// error가 났을때 결과값 반환안하고 바로 error status  뱉는 로직이 필요함.

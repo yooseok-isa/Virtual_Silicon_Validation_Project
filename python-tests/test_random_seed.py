@@ -1,7 +1,6 @@
 from pathlib import Path
 import json
 import random
-from _pytest.tmpdir import tmp_path
 import pytest
 import errno
 

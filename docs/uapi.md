@@ -59,8 +59,8 @@ reasoning.
 struct vnpu_info {
     __u32 abi_version;
     __u32 device_id;
-//    __u32 revision; // reserved , not implemented yet.
-//    __u32 capabilities; // reserved, not implemented yet.
+//    __u32 revision; // planned Revision B info field.
+//    __u32 capabilities; // planned feature bitmap, see docs/register_map.md.
 };
 ```
 
@@ -70,8 +70,8 @@ Returned by `VNPU_IOCTL_GET_INFO`.
 |---|---|
 | `abi_version` | UAPI version returned by the driver |
 | `device_id` | MMIO `DEVICE_ID`, expected `0x564E5055` |
-| `revision` | MMIO `REVISION`; MVP accepts `1` |
-| `capabilities` | MMIO `CAPABILITIES`; MVP expects `0` |
+| `revision` | MMIO `REVISION`; Revision A is `1`, Revision B is `2` |
+| `capabilities` | MMIO `CAPABILITIES`; Revision A reports `0`, Revision B reports `0x0000007D` |
 
 ### `struct vnpu_dot_request`
 
@@ -168,7 +168,7 @@ instead of inventing behavior that the device model does not implement.
 
 | Device field | MMIO offset / UAPI field | Current behavior | Driver/UAPI rule |
 |---|---:|---|---|
-| `CAPABILITIES` | `0x008` / `vnpu_info.capabilities` | Reads return `0`; no feature bits are implemented | Report `0` and do not infer feature support from this field |
+| `CAPABILITIES` | `0x008` / `vnpu_info.capabilities` | Revision A reads `0`; Revision B must expose the documented feature bitmap | Accept `0` for Revision A; require `0x0000007D` bits for Revision B |
 | `JOB_ID` | `0x020` / `vnpu_dot_request.job_id` | Reads return `0`; writes are ignored | Accept the field for ABI stability, but ignore it for Revision A |
 | Revision B length | `VECTOR_LENGTH == 16` | Dot-product code has a placeholder, but Revision A register writes reject length `16` with `VNPU_ERR_INVALID_LENGTH` | Reject length `16` unless a future Revision B device is explicitly supported |
 | Upper input words | `input_a[2..3]`, `input_b[2..3]` | Stored by MMIO, but not consumed for Revision A length `8` | Require userspace to zero them for Revision A; do not use them in result calculation |
