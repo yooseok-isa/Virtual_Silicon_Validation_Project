@@ -30,7 +30,7 @@ These IDs are for a local virtual portfolio project. They are not official hardw
 | `0x018` | `IRQ_ENABLE` | RW | `0` | Interrupt enable mask |
 | `0x01C` | `ERROR_CODE` | RO | `0` | Last device error |
 | `0x020` | `JOB_ID` | RW | `0` | Revision B job identifier |
-| `0x024` | `VECTOR_LENGTH` | RW | `8` | Dot-product vector length |
+| `0x024` | `VECTOR_LENGTH` | RW | revision-dependent | Dot-product vector length |
 | `0x100`-`0x10C` | `INPUT_A[0..3]` | RW | `0` | 16 packed signed INT8 inputs |
 | `0x120`-`0x12C` | `INPUT_B[0..3]` | RW | `0` | 16 packed signed INT8 inputs |
 | `0x140` | `RESULT` | RO | `0` | Signed INT32 dot-product result |
@@ -89,9 +89,11 @@ Expected values:
 | B | `0x0000007D` | Dot INT8, vector length 16, `JOB_ID`, fault injection, completion IRQ, and error IRQ |
 
 Revision A keeps this register at `0` to preserve the current Revision A
-contract. Revision B must set the documented feature bits. Revision B must not
-set `VNPU_CAP_VECTOR_LEN_8` unless backward-compatible length-8 operation is
-explicitly added to the Revision B contract.
+contract. Revision B must set the documented feature bits and must keep the
+expected value at `0x0000007D`. Revision B also accepts `VECTOR_LENGTH == 8` as
+backward-compatible behavior; software must allow it based on `REVISION == 2`
+even though the Revision B capability value does not set
+`VNPU_CAP_VECTOR_LEN_8`.
 
 ## Control
 
@@ -182,9 +184,11 @@ Access: read/write
 | Revision | Supported Values |
 |---|---|
 | A | `8` only | 
-| B | `16` only |
+| B | `8` and `16` |
 
 Unsupported values must produce `VNPU_ERR_INVALID_LENGTH`.
+The reset value is revision-dependent: Revision A resets to `8`, and Revision B
+resets to `16`.
 
 ## Input Registers
 

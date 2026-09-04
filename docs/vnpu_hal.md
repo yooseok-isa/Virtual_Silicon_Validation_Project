@@ -153,19 +153,21 @@ Required behavior:
 
 The backend must validate request shape before issuing `ioctl`.
 
-Revision A rules:
+Revision-aware vector rules:
 
 - `lhs.size() == rhs.size()`;
-- only length `8` is supported until Revision B is implemented;
+- Revision A supports only length `8`;
+- Revision B supports length `8` and length `16`;
 - inputs are signed INT8 values;
-- inputs are packed into `struct vnpu_dot_request::input_a[0..1]` and
-  `input_b[0..1]` in little-endian byte order;
-- reserved upper input words must be written as zero;
+- length `8` inputs are packed into `struct vnpu_dot_request::input_a[0..1]`
+  and `input_b[0..1]` in little-endian byte order;
+- length `16` inputs use all four packed input words;
+- unused upper input words must be written as zero for length `8`;
 - `timeout` must be nonzero and within the driver-supported range.
 
-Revision B is planned to support length `16`, but Milestone 4 must keep the
-same public API for Revision A and B. Until Revision B support is implemented,
-length `16` must fail with a structured unsupported-operation error.
+Milestone 4 must keep the same public API for Revision A and B. Revision B
+support must accept both length `8` and length `16`; requests for unsupported
+lengths must fail with a structured unsupported-operation error.
 
 ## Mock Backend
 
@@ -240,10 +242,10 @@ Required `run-dot` input JSON shape:
 ```
 
 `input_a` and `input_b` contain signed INT8 values. Revision A input files must
-provide exactly 8 elements per input vector. Revision B may use the same field
-names with 16 elements once Revision B support is implemented. The CLI must
-reject mismatched vector lengths, values outside the signed INT8 range, missing
-fields, and nonpositive timeouts before issuing the HAL request.
+provide exactly 8 elements per input vector. Revision B input files may provide
+8 or 16 elements using the same field names. The CLI must reject mismatched
+vector lengths, values outside the signed INT8 range, missing fields, and
+nonpositive timeouts before issuing the HAL request.
 
 Suggested JSON shapes:
 
@@ -282,7 +284,7 @@ GoogleTest coverage must include:
 
 - reserved capability handling;
 - Revision A fixed length `8`;
-- Revision B fixed length `16` through the mock backend;
+- Revision B length `8` and `16` behavior through the mock backend;
 - unsupported length rejection;
 - signed INT8 packing and dot-product correctness;
 - timeout/fault error mapping;

@@ -230,7 +230,7 @@ static void run_dot(volatile uint8_t *mmio, uint32_t expected, const char *name)
 static void test_invalid_length(volatile uint8_t *mmio)
 {
     mmio_write32(mmio, REG_CONTROL, CONTROL_RESET);
-    mmio_write32(mmio, REG_VECTOR_LENGTH, 16);
+    mmio_write32(mmio, REG_VECTOR_LENGTH, 32);
 
     expect_reg(mmio, REG_STATUS, STATUS_ERROR, "STATUS after invalid length");
     expect_reg(mmio, REG_ERROR_CODE, VNPU_ERR_INVALID_LENGTH,
@@ -285,10 +285,10 @@ int main(void)
     mmio_write32(mmio, REG_CONTROL, CONTROL_RESET);
 
     expect_reg(mmio, REG_DEVICE_ID, 0x564e5055, "DEVICE_ID");
-    expect_reg(mmio, REG_REVISION, 0x1, "REVISION");
-    expect_reg(mmio, REG_CAPABILITIES, 0x0, "CAPABILITIES");
+    expect_reg(mmio, REG_REVISION, 0x2, "REVISION");
+    expect_reg(mmio, REG_CAPABILITIES, 0x7D, "CAPABILITIES");
     expect_reg(mmio, REG_STATUS, STATUS_IDLE, "STATUS after reset");
-    expect_reg(mmio, REG_VECTOR_LENGTH, 0x8, "VECTOR_LENGTH after reset");
+    expect_reg(mmio, REG_VECTOR_LENGTH, 0x10, "VECTOR_LENGTH after reset");
 
     run_dot(mmio, 0x24, "dot8");
 

@@ -19,6 +19,7 @@
 #include "qapi/visitor.h"
 #include <string.h>
 #include <stdint.h>
+#include <glib.h>
 
 
 #define TYPE_PCI_VNPU_DEVICE "vnpu"
@@ -34,10 +35,10 @@
 #define VNPU_CAP_DOT_I8 BIT(0) // A, B
 #define VNPU_CAP_VECTOR_LEN_8 BIT(1) // A
 #define VNPU_CAP_VECTOR_LEN_16 BIT(2) // B
-#define VNPU_CAP_JOB_ID BIT(2) // A, B
-#define VNPU_CAP_FAULT_INJECTION BIT(3) // A, B
-#define VNPU_CAP_COMPLETION_IRQ BIT(4) // A, B
-#define VNPU_CAP_ERROR_IRQ BIT(5) // A, B
+#define VNPU_CAP_JOB_ID BIT(3) // A, B
+#define VNPU_CAP_FAULT_INJECTION BIT(4) // A, B
+#define VNPU_CAP_COMPLETION_IRQ BIT(5) // A, B
+#define VNPU_CAP_ERROR_IRQ BIT(6) // A, B
 
 #define VNPU_CAP_A \
 	VNPU_CAP_DOT_I8 | VNPU_CAP_VECTOR_LEN_8 | VNPU_CAP_JOB_ID | VNPU_CAP_FAULT_INJECTION | VNPU_CAP_COMPLETION_IRQ | VNPU_CAP_ERROR_IRQ
@@ -68,9 +69,10 @@
 #define FAULT_FORCE_ERROR BIT(3)
 
 typedef struct VnpuState VnpuState;
-DECLARE_INSTANCE_CHECKER(VnpuState, VNPU, TYPE_PCI_VNPU_DEVICE)
+typedef struct VnpuRevisionOps VnpuRevisionOps;
+DECLARE_INSTANCE_CHECKER(VnpuState, VNPU, TYPE_PCI_VNPU_DEVICE);
 
-struct VnpuRevsionOps{
+struct VnpuRevisionOps {
 	uint32_t revision;
 	uint32_t capabilities;
 	uint32_t vec_len;
@@ -95,7 +97,7 @@ struct VnpuState {
 
 	QEMUTimer dot_timer;
 
-	const struct VnpuRevsionOps *ops;
+	struct VnpuRevisionOps *ops;
 };
 
 static uint64_t vnpu_mmio_read(void *opaque, hwaddr addr, unsigned size);
@@ -105,7 +107,7 @@ static void vnpu_update_irq(VnpuState *vnpu);
 static int32_t unpack_i8(uint32_t input, unsigned int shift);
 static int32_t vnpu_dot_product(void *opaque);
 static void vnpu_dot_timer(void *opaque);
-static void vnpu_register_init(VnpuState *vnpu);
+static void vnpu_register_init(VnpuState *vnpu, uint32_t version);
 static void pci_vnpu_realize(PCIDevice *pdev, Error **errp);
 static void pci_vnpu_uninit(PCIDevice *pdev);
 static void vnpu_class_init(ObjectClass *class, const void *data);
@@ -349,7 +351,7 @@ static int32_t vnpu_dot_product(void *opaque){
 			break;
 		default:
 			// The vector length is invalid if execution reaches here
-			vnpu->status = STATUS_ERROR
+			vnpu->status = STATUS_ERROR;
 			vnpu->irq_status = IRQ_ERROR;
 			vnpu->err_code = VNPU_ERR_INVALID_LENGTH;
 			break;
@@ -381,7 +383,7 @@ static void vnpu_dot_timer(void *opaque){
 }
 
 static void vnpu_register_init(VnpuState *vnpu, uint32_t version){
-
+	
 	if(version  == VNPU_REVISION_A){
 		vnpu->control = 0;
 		vnpu->status = STATUS_IDLE;
@@ -419,6 +421,7 @@ static void pci_vnpu_realize(PCIDevice *pdev, Error **errp){
 	VnpuState *vnpu = VNPU(pdev);
 	uint8_t *pci_conf = pdev->config;
 
+	vnpu->ops = g_new0(VnpuRevisionOps, 1);
 	pci_config_set_interrupt_pin(pci_conf, 1);
 	
 	vnpu_register_init(vnpu, VNPU_REVISION_B);
@@ -434,6 +437,7 @@ static void pci_vnpu_uninit(PCIDevice *pdev)
 {
     VnpuState *vnpu = VNPU(pdev);
 	timer_del(&vnpu->dot_timer);
+	g_free(vnpu->ops);
 	
 }
 

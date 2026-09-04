@@ -153,8 +153,8 @@ printf 'BAR0: 0x%x-0x%x (%u bytes)\n' "$BAR0_START" "$BAR0_END" "$BAR0_SIZE"
 mmio_write "$REG_CONTROL" "$CONTROL_RESET"
 
 expect_read "$REG_DEVICE_ID" 0x564e5055 "DEVICE_ID"
-expect_read "$REG_REVISION" 0x1 "REVISION"
-expect_read "$REG_CAPABILITIES" 0x0 "CAPABILITIES"
+expect_read "$REG_REVISION" 0x2 "REVISION"
+expect_read "$REG_CAPABILITIES" 0x7D "CAPABILITIES"
 expect_read "$REG_STATUS" "$STATUS_IDLE" "STATUS after reset"
 expect_read "$REG_VECTOR_LENGTH" 0x8 "VECTOR_LENGTH after reset"
 

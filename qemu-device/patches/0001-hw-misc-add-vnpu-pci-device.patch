@@ -27,10 +27,10 @@ index b1d8d8e..b2c5156 100644
  system_ss.add(when: 'CONFIG_ISA_TESTDEV', if_true: files('pc-testdev.c'))
 diff --git a/hw/misc/vnpu.c b/hw/misc/vnpu.c
 new file mode 100644
-index 0000000..160ad89
+index 0000000..84df517
 --- /dev/null
 +++ b/hw/misc/vnpu.c
-@@ -0,0 +1,406 @@
+@@ -0,0 +1,472 @@
 +/*
 + *
 + * project를 위한 가상 가속기 VNPU 코드
@@ -51,6 +51,9 @@ index 0000000..160ad89
 +#include "qemu/module.h"
 +#include "qapi/visitor.h"
 +#include <string.h>
++#include <stdint.h>
++#include <glib.h>
++
 +
 +#define TYPE_PCI_VNPU_DEVICE "vnpu"
 +#define REVISION VNPU_REVISION_A// revision a is 1, b is 2
@@ -59,6 +62,21 @@ index 0000000..160ad89
 +#define VEC_LEN_A 0x08
 +// Revison
 +#define VNPU_REVISION_A 0x1
++#define VNPU_REVISION_B 0x2
++
++// CAPABILITIES
++#define VNPU_CAP_DOT_I8 BIT(0) // A, B
++#define VNPU_CAP_VECTOR_LEN_8 BIT(1) // A
++#define VNPU_CAP_VECTOR_LEN_16 BIT(2) // B
++#define VNPU_CAP_JOB_ID BIT(3) // A, B
++#define VNPU_CAP_FAULT_INJECTION BIT(4) // A, B
++#define VNPU_CAP_COMPLETION_IRQ BIT(5) // A, B
++#define VNPU_CAP_ERROR_IRQ BIT(6) // A, B
++
++#define VNPU_CAP_A \
++	VNPU_CAP_DOT_I8 | VNPU_CAP_VECTOR_LEN_8 | VNPU_CAP_JOB_ID | VNPU_CAP_FAULT_INJECTION | VNPU_CAP_COMPLETION_IRQ | VNPU_CAP_ERROR_IRQ
++#define VNPU_CAP_B \
++	VNPU_CAP_DOT_I8 | VNPU_CAP_VECTOR_LEN_16 | VNPU_CAP_JOB_ID | VNPU_CAP_FAULT_INJECTION | VNPU_CAP_COMPLETION_IRQ | VNPU_CAP_ERROR_IRQ
 +
 +#define CONTROL_START BIT(0)
 +#define CONTROL_RESET BIT(1)
@@ -84,7 +102,14 @@ index 0000000..160ad89
 +#define FAULT_FORCE_ERROR BIT(3)
 +
 +typedef struct VnpuState VnpuState;
-+DECLARE_INSTANCE_CHECKER(VnpuState, VNPU, TYPE_PCI_VNPU_DEVICE)
++typedef struct VnpuRevisionOps VnpuRevisionOps;
++DECLARE_INSTANCE_CHECKER(VnpuState, VNPU, TYPE_PCI_VNPU_DEVICE);
++
++struct VnpuRevisionOps {
++	uint32_t revision;
++	uint32_t capabilities;
++	uint32_t vec_len;
++};
 +
 +struct VnpuState {
 +	PCIDevice pdev;
@@ -92,19 +117,20 @@ index 0000000..160ad89
 +	uint32_t status;
 +	uint32_t err_code;
 +
-+	uint32_t input_a[4];
++	uint32_t input_a[4];  
 +	uint32_t input_b[4];
 +	int32_t result;
-+	int32_t revision;
 +
 +	uint32_t control;
-+
-+	uint32_t vec_len;
++	uint32_t job_ib; // new function
++	
 +	uint32_t irq_status;
 +	uint32_t irq_enable;
 +	uint32_t fault_control;
 +
 +	QEMUTimer dot_timer;
++
++	struct VnpuRevisionOps *ops;
 +};
 +
 +static uint64_t vnpu_mmio_read(void *opaque, hwaddr addr, unsigned size);
@@ -114,7 +140,7 @@ index 0000000..160ad89
 +static int32_t unpack_i8(uint32_t input, unsigned int shift);
 +static int32_t vnpu_dot_product(void *opaque);
 +static void vnpu_dot_timer(void *opaque);
-+static void vnpu_register_init(VnpuState *vnpu);
++static void vnpu_register_init(VnpuState *vnpu, uint32_t version);
 +static void pci_vnpu_realize(PCIDevice *pdev, Error **errp);
 +static void pci_vnpu_uninit(PCIDevice *pdev);
 +static void vnpu_class_init(ObjectClass *class, const void *data);
@@ -133,10 +159,10 @@ index 0000000..160ad89
 +		val = 0x564E5055;
 +		break;
 +	case 0x004:
-+		val = vnpu->revision;
++		val = vnpu->ops->revision;
 +		break;
 +	case 0x008:
-+		//reserved
++		val = vnpu->ops->capabilities;
 +		break;
 +	case 0x010:
 +		val = vnpu->status;
@@ -151,10 +177,10 @@ index 0000000..160ad89
 +		val = vnpu->err_code;
 +		break;
 +	case 0x020:
-+		//reserved;
++		val = vnpu->job_ib;
 +		break;
 +	case 0x024:
-+		val = vnpu->vec_len;
++		val = vnpu->ops->vec_len;
 +		break;
 +	case 0x100:
 +		val = vnpu->input_a[0];
@@ -228,7 +254,7 @@ index 0000000..160ad89
 +				}
 +				vnpu->status = STATUS_BUSY;
 +				vnpu->irq_status = 0;
-+				vnpu_update_irq(vnpu);
++				vnpu_update_irq(vnpu); // 이녀석이 왜 여기 에 있지? timer_mod 뒤에 있어야하는데? 애초에 timer_mod에 구현이 되어 있는디?
 +				vnpu->err_code = 0;
 +				timer_mod(&vnpu->dot_timer, qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL)+100);
 +				break;
@@ -243,19 +269,30 @@ index 0000000..160ad89
 +			vnpu_update_irq(vnpu);
 +			break;
 +		case 0x020: //JOB_ID
-+			//reserved
++			vnpu->job_ib = val;
 +			break;
 +		case 0x024: //VECTOR_LENGTH
-+			if(val == VEC_LEN_A){
-+				vnpu->vec_len = val;
-+				break;
++			if(vnpu->ops->revision == VNPU_REVISION_A){ 
++				if(val == 8){
++					vnpu->ops->vec_len = val;
++				}
++				else{
++					vnpu->err_code = VNPU_ERR_INVALID_LENGTH;
++					vnpu->status = STATUS_ERROR;
++					vnpu->irq_status = IRQ_ERROR;
++					vnpu_update_irq(vnpu);
++				}
 +			}
-+			else{
-+				vnpu->err_code = VNPU_ERR_INVALID_LENGTH;
-+				vnpu->status = STATUS_ERROR;
-+				vnpu->irq_status = IRQ_ERROR;
-+				vnpu_update_irq(vnpu);
-+				break;
++			else if(vnpu->ops->revision == VNPU_REVISION_B){
++				if(val == 8 || val == 16){
++					vnpu->ops->vec_len = val;
++				}
++				else {
++					vnpu->err_code = VNPU_ERR_INVALID_LENGTH;
++					vnpu->status = STATUS_ERROR;
++					vnpu->irq_status = IRQ_ERROR;
++					vnpu_update_irq(vnpu);
++				}
 +			}
 +			break;
 +		case 0x100: //write input_a
@@ -324,20 +361,34 @@ index 0000000..160ad89
 +	uint32_t *input_b = vnpu->input_b;
 +	int32_t result = 0;
 +
-+	switch(vnpu->vec_len){
++	switch(vnpu->ops->vec_len){
 +		case 0x08:
 +			for(int i=0; i<2 ; i++){
 +				result += unpack_i8(input_a[i], 0) * unpack_i8(input_b[i], 0);
 +				result += unpack_i8(input_a[i], 1) * unpack_i8(input_b[i], 1);
 +				result += unpack_i8(input_a[i], 2) * unpack_i8(input_b[i], 2);
 +				result += unpack_i8(input_a[i], 3) * unpack_i8(input_b[i], 3);
++				vnpu->status = STATUS_DONE;
++				vnpu->irq_status = IRQ_COMPLETION;
 +			}
 +			break;
 +		case 0x10:
-+			//reserved
++			for(int i=0; i<4 ; i++){
++				result += unpack_i8(input_a[i], 0) * unpack_i8(input_b[i], 0);
++				result += unpack_i8(input_a[i], 1) * unpack_i8(input_b[i], 1);
++				result += unpack_i8(input_a[i], 2) * unpack_i8(input_b[i], 2);
++				result += unpack_i8(input_a[i], 3) * unpack_i8(input_b[i], 3);
++				vnpu->status = STATUS_DONE;
++				vnpu->irq_status = IRQ_COMPLETION;
++			}
++			break;
++		default:
++			// The vector length is invalid if execution reaches here
++			vnpu->status = STATUS_ERROR;
++			vnpu->irq_status = IRQ_ERROR;
++			vnpu->err_code = VNPU_ERR_INVALID_LENGTH;
 +			break;
 +	}
-+
 +	return result;
 +}
 +
@@ -345,8 +396,6 @@ index 0000000..160ad89
 +	
 +	VnpuState *vnpu = opaque;
 +	vnpu->result = vnpu_dot_product(vnpu);
-+	vnpu->status = STATUS_DONE;
-+	vnpu->irq_status = IRQ_COMPLETION;
 +	
 +	if(vnpu->fault_control & FAULT_IRQ_DROP){
 +		vnpu->irq_status = 0;
@@ -366,21 +415,38 @@ index 0000000..160ad89
 +	vnpu_update_irq(vnpu);
 +}
 +
-+static void vnpu_register_init(VnpuState *vnpu){
-+
-+	vnpu->revision = VNPU_REVISION_A;
-+	vnpu->vec_len = VEC_LEN_A;
-+	vnpu->control = 0;
-+	vnpu->status = STATUS_IDLE;
-+	vnpu->irq_status = 0;
-+	vnpu->irq_enable = 0;
-+	vnpu->err_code = 0;
-+	vnpu->result = 0;
-+	vnpu->fault_control = 0;
-+	memset(vnpu->input_a, 0, sizeof(vnpu->input_a));
-+	memset(vnpu->input_b, 0, sizeof(vnpu->input_b));
-+
-+
++static void vnpu_register_init(VnpuState *vnpu, uint32_t version){
++	
++	if(version  == VNPU_REVISION_A){
++		vnpu->control = 0;
++		vnpu->status = STATUS_IDLE;
++		vnpu->irq_status = 0;
++		vnpu->irq_enable = 0;
++		vnpu->err_code = 0;
++		vnpu->result = 0;
++		vnpu->fault_control = 0;
++		vnpu->job_ib = 0;
++		memset(vnpu->input_a, 0, sizeof(vnpu->input_a));
++		memset(vnpu->input_b, 0, sizeof(vnpu->input_b));
++		vnpu->ops->capabilities = VNPU_CAP_A;
++		vnpu->ops->revision = VNPU_REVISION_A;
++		vnpu->ops->vec_len = 8;
++	}
++	else if (version == VNPU_REVISION_B){
++		vnpu->control = 0;
++		vnpu->status = STATUS_IDLE;
++		vnpu->irq_status = 0;
++		vnpu->irq_enable = 0;
++		vnpu->err_code = 0;
++		vnpu->result = 0;
++		vnpu->fault_control = 0;
++		vnpu->job_ib = 0;
++		memset(vnpu->input_a, 0, sizeof(vnpu->input_a));
++		memset(vnpu->input_b, 0, sizeof(vnpu->input_b));
++		vnpu->ops->capabilities = VNPU_CAP_B;
++		vnpu->ops->revision = VNPU_REVISION_B;
++		vnpu->ops->vec_len = 16;
++	}
 +}
 +
 +static void pci_vnpu_realize(PCIDevice *pdev, Error **errp){
@@ -388,11 +454,10 @@ index 0000000..160ad89
 +	VnpuState *vnpu = VNPU(pdev);
 +	uint8_t *pci_conf = pdev->config;
 +
++	vnpu->ops = g_new0(VnpuRevisionOps, 1);
 +	pci_config_set_interrupt_pin(pci_conf, 1);
 +	
-+	vnpu_register_init(vnpu);
-+	/* qemu_mutex_init(&vnpu->thr_mutex); */
-+	/* qemu_cond_init(&vnpu->thr_cond); */
++	vnpu_register_init(vnpu, VNPU_REVISION_B);
 +	timer_init_ms(&vnpu->dot_timer, QEMU_CLOCK_VIRTUAL, vnpu_dot_timer, vnpu);
 +
 +
@@ -405,6 +470,7 @@ index 0000000..160ad89
 +{
 +    VnpuState *vnpu = VNPU(pdev);
 +	timer_del(&vnpu->dot_timer);
++	g_free(vnpu->ops);
 +	
 +}
 +
@@ -417,7 +483,7 @@ index 0000000..160ad89
 +    k->exit = pci_vnpu_uninit;
 +    k->vendor_id = 0x1B36;
 +    k->device_id = 0x1000;
-+    k->revision = 0x10;
++    k->revision = 0x10; // is this required?
 +    k->class_id = PCI_CLASS_OTHERS;
 +    set_bit(DEVICE_CATEGORY_MISC, dc->categories);
 +}

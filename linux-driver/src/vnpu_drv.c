@@ -50,6 +50,7 @@ struct vnpu_device {
 	struct device *dev;
 
 	u32 abi_version;
+	u32 device_revision;
 
 	void __iomem *base;
 
@@ -216,7 +217,7 @@ static int vnpu_probe(struct pci_dev *pdev, const struct pci_device_id *id){
 		dev_err(&pdev->dev, "failed to register misc device: %d\n", ret);
 		return ret;
 	}
-
+	vnpu->device_revision = readl(vnpu->base + VNPU_REG_REVISION);
 	vnpu->device_error_num = 0;
 	vnpu->reset_num = 0;
 	vnpu->timed_out_num = 0;
@@ -300,10 +301,19 @@ static long vnpu_ioctl(struct file *file, unsigned int cmd, unsigned long arg){
 			}
 
 			/* vec_len = readl(vnpu->base + VNPU_REG_VECTOR_LENGTH); */
-			if(!(dot.vector_length == 8 || dot.vector_length == 16)){
-				dev_err(vnpu->dev, "invalid length\n");
-				dot.driver_status = DRIVER_STATUS_INV_LEN;
-				return -EINVAL;
+			if(vnpu->device_revision == 0x1){
+				if(dot.vector_length != 8){
+					dev_err(vnpu->dev, "invalid length\n");
+					dot.driver_status = DRIVER_STATUS_INV_LEN;
+					return -EINVAL;
+				}
+			}
+			else if(vnpu->device_revision == 0x2){
+				if(!(dot.vector_length == 8 || dot.vector_length == 16)){
+					dev_err(vnpu->dev, "invalid length\n");
+					dot.driver_status = DRIVER_STATUS_INV_LEN;
+					return -EINVAL;
+				}
 			}
 			//revision b에서 255 ~ 1000 사이로 수정
 			if(dot.timeout_ms == 0 || dot.timeout_ms > 1000){

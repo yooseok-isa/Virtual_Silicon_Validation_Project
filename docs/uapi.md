@@ -21,7 +21,7 @@ The driver binds to the QEMU VNPU PCI device:
 |---|---:|
 | PCI vendor ID | `0x1B36` |
 | PCI device ID | `0x1000` |
-| Supported revision in MVP | Revision A, register value `1` |
+| Supported revision in MVP | Revision A (`1`) and Revision B (`2`) |
 
 ## ABI Rules
 
@@ -95,7 +95,7 @@ Used by `VNPU_IOCTL_RUN_DOT`.
 |---|---|---|
 | `abi_version` | in | Must be `1` |
 | `job_id` | in | Reserved for Revision B; ignored for Revision A |
-| `vector_length` | in | Revision A supports `8` only |
+| `vector_length` | in | Revision A supports `8` only; Revision B supports `8` and `16` |
 | `timeout_ms` | in | Maximum wait time for completion |
 | `input_a` | in | Packed signed INT8 vector A words |
 | `input_b` | in | Packed signed INT8 vector B words |
@@ -108,10 +108,10 @@ The current UAPI shape mirrors the MMIO packing used by the device model:
 packed signed INT8 elements in little-endian byte order.
 
 For Revision A, only `input_a[0..1]` and `input_b[0..1]` are consumed, covering
-elements `0..7`. `input_a[2..3]` and `input_b[2..3]` are reserved for Revision B
-length-16 behavior and are ignored by the current Revision A device. Userspace
-should set the reserved words to zero for deterministic logs and future
-compatibility.
+elements `0..7`. For Revision B length `8`, the same lower two words are
+consumed and the upper input words are ignored. For Revision B length `16`, all
+four packed input words are consumed. Userspace should set unused upper words to
+zero for deterministic logs and future compatibility.
 
 ### `struct vnpu_fault_request`
 
@@ -163,22 +163,23 @@ Returned by `VNPU_IOCTL_GET_STATS`.
 ## Reserved Device Fields
 
 The current `qemu-device/src/vnpu.c` implementation contains reserved registers
-and Revision-B placeholder paths. The driver must preserve these semantics
+and revision-specific behavior. The driver must preserve these semantics
 instead of inventing behavior that the device model does not implement.
 
 | Device field | MMIO offset / UAPI field | Current behavior | Driver/UAPI rule |
 |---|---:|---|---|
 | `CAPABILITIES` | `0x008` / `vnpu_info.capabilities` | Revision A reads `0`; Revision B must expose the documented feature bitmap | Accept `0` for Revision A; require `0x0000007D` bits for Revision B |
-| `JOB_ID` | `0x020` / `vnpu_dot_request.job_id` | Reads return `0`; writes are ignored | Accept the field for ABI stability, but ignore it for Revision A |
-| Revision B length | `VECTOR_LENGTH == 16` | Dot-product code has a placeholder, but Revision A register writes reject length `16` with `VNPU_ERR_INVALID_LENGTH` | Reject length `16` unless a future Revision B device is explicitly supported |
-| Upper input words | `input_a[2..3]`, `input_b[2..3]` | Stored by MMIO, but not consumed for Revision A length `8` | Require userspace to zero them for Revision A; do not use them in result calculation |
+| `JOB_ID` | `0x020` / `vnpu_dot_request.job_id` | Revision A reads `0` and ignores writes; Revision B preserves the written value | Ignore the field for Revision A; program it for Revision B when provided |
+| Revision B length | `VECTOR_LENGTH == 8` or `16` | Revision B accepts both length `8` and length `16`; Revision A rejects length `16` with `VNPU_ERR_INVALID_LENGTH` | Allow `8` for Revision A; allow `8` and `16` for Revision B |
+| Upper input words | `input_a[2..3]`, `input_b[2..3]` | Stored by MMIO; consumed only for length `16` | Require userspace to zero them for length `8`; include them in result calculation for length `16` |
 | Fault mask upper bits | `fault_mask[31:4]` | Device masks unsupported bits off | Driver must mask or reject unsupported bits; userspace must write zero |
 | Unimplemented MMIO offsets | BAR0 offsets outside the documented register map | Reads return zero and writes have no effect in the current model | Driver must not expose raw access to these offsets |
 
 The PCI configuration-space revision currently differs from the MMIO
 `REVISION` register: the QEMU class sets PCI revision `0x10`, while the MMIO
-`REVISION` register returns `1` for Revision A. Driver revision handling must use
-the MMIO `REVISION` register for hardware revision decisions.
+`REVISION` register returns `1` for Revision A and `2` for Revision B. Driver
+revision handling must use the MMIO `REVISION` register for hardware revision
+decisions.
 
 ## Driver Status Values
 
